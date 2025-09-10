@@ -1187,16 +1187,35 @@ if st.session_state.logged_in:
             periodo2 = pd.read_sql(query, engine)
             
             #Definir remota
-            contador2.loc[contador2['Nº Contador'] >= 0, "Tipo Contador"] = "Leitura Remota"
+            # Certifica que o DataFrame não está vazio e que a coluna existe
+            if not contador2.empty and 'Nº Contador' in contador2.columns:
+                # Garantir que o índice está definido
+                contador2 = contador2.reset_index(drop=True)
+                
+                # Atribuição segura
+                contador2.loc[contador2['Nº Contador'] >= 0, "Tipo Contador"] = "Leitura Remota"
+            else:
+                # Opcional: cria a coluna com valor padrão se o DataFrame estiver vazio
+                contador2["Tipo Contador"] = pd.Series(dtype=str)
             
             
             
-            # definir coluna com condições
-            base['Diferença'] = base['Atual'] - base['Anterior']
-
-            base.loc[base['Diferença'] < 0, "Analise Leitura"] = "Volta de Contador"
-            base.loc[base['Diferença'] == 0, "Analise Leitura"] = "Contador Parado"
-            base.loc[base['Diferença'] > 0, "Analise Leitura"] = "Local Com Consumo"
+            # Verificar se o DataFrame não está vazio e se as colunas existem
+            if not base.empty and all(col in base.columns for col in ['Atual', 'Anterior']):
+                # Resetar índice para garantir que .loc funcione
+                base = base.reset_index(drop=True)
+                
+                # Criar coluna Diferença
+                base['Diferença'] = base['Atual'] - base['Anterior']
+                
+                # Atribuições seguras
+                base.loc[base['Diferença'] < 0, "Analise Leitura"] = "Volta de Contador"
+                base.loc[base['Diferença'] == 0, "Analise Leitura"] = "Contador Parado"
+                base.loc[base['Diferença'] > 0, "Analise Leitura"] = "Local Com Consumo"
+            else:
+                # Caso o DataFrame esteja vazio, criar coluna vazia
+                base["Analise Leitura"] = pd.Series(dtype=str)
+                base["Diferença"] = pd.Series(dtype=float)
 
             #junção de contador + função + cil
             base['CIL/Contador'] = base['CIL'].astype(str) + '-' + base['Número'].astype(str)
@@ -1218,62 +1237,63 @@ if st.session_state.logged_in:
                     ['Tipo Contador','Diferença', 'periodo', 'Analise Leitura', 'Unidade', 'Nr. Roteiro', 'Roteiro', 'Ciclo', 'Itinerário', 'Zona ', ' Rua ', ' Cliente',
                     'Ponto de Medida', 'CIL', 'Número', 'Marca', 'Função','Anterior', 'Atual', 'Anomalia']]
 
-        #definir campos de pesquisa para tipo de leitura
-        st.sidebar.header("Definir Tipo de Leitura:")
-        tp_leit = st.sidebar.multiselect(
-            "Definir Contador",
-            options=cont_geral['Tipo Contador'].unique(),
+            #definir campos de pesquisa para tipo de leitura
+            st.sidebar.header("Definir Tipo de Leitura:")
+            tp_leit = st.sidebar.multiselect(
+                "Definir Contador",
+                options=cont_geral['Tipo Contador'].unique(),
 
-        )
-        geral_selection = cont_geral.query(
-        "`Tipo Contador` == @tp_leit"
-        )
+            )
+            geral_selection = cont_geral.query(
+            "`Tipo Contador` == @tp_leit"
+            )
 
-        #definir campos de pesquisa para periodo de leitura
-        st.sidebar.header("Definir Periodo:")
-        pe_leit = st.sidebar.multiselect(
-            "Definir Formato de Leitura",
-            options=cont_geral['periodo'].unique(),
+            #definir campos de pesquisa para periodo de leitura
+            st.sidebar.header("Definir Periodo:")
+            pe_leit = st.sidebar.multiselect(
+                "Definir Formato de Leitura",
+                options=cont_geral['periodo'].unique(),
 
-        )
-        geral_selection2 = geral_selection.query(
-        "`periodo` == @pe_leit"
-        )        
+            )
+            geral_selection2 = geral_selection.query(
+            "`periodo` == @pe_leit"
+            )        
 
-        #definir campos de pesquisa para periodo de leitura
-        st.sidebar.header("Definir Leitura:")
-        dif_leit = st.sidebar.multiselect(
-            "Definir Formato de Leitura",
-            options=cont_geral['Analise Leitura'].unique(),
+            #definir campos de pesquisa para periodo de leitura
+            st.sidebar.header("Definir Leitura:")
+            dif_leit = st.sidebar.multiselect(
+                "Definir Formato de Leitura",
+                options=cont_geral['Analise Leitura'].unique(),
+                key="dif_leit_multiselect"  # chave única
 
-        )
-        geral_selection3 = geral_selection2.query(
-        "`Analise Leitura` == @dif_leit"
-        )        
+            )
+            geral_selection3 = geral_selection2.query(
+            "`Analise Leitura` == @dif_leit"
+            )        
 
-        #alterar ordem de apresentação
-        geral_selection3 = geral_selection3.loc[:,
-                    ['Unidade', 'Nr. Roteiro', 'Roteiro', 'Ciclo', 'Itinerário', 'Zona ', ' Rua ', ' Cliente',
-                    'Ponto de Medida', 'CIL', 'Número', 'Marca', 'Função','Anterior', 'Atual', 'Anomalia']]
+            #alterar ordem de apresentação
+            geral_selection3 = geral_selection3.loc[:,
+                        ['Unidade', 'Nr. Roteiro', 'Roteiro', 'Ciclo', 'Itinerário', 'Zona ', ' Rua ', ' Cliente',
+                        'Ponto de Medida', 'CIL', 'Número', 'Marca', 'Função','Anterior', 'Atual', 'Anomalia']]
 
-        # remover coluna de index
-        geral_selection3.set_index('Unidade', inplace=True)
-        st.dataframe(geral_selection3)
+            # remover coluna de index
+            geral_selection3.set_index('Unidade', inplace=True)
+            st.dataframe(geral_selection3)
 
-        #opção de download dos dados em excel
-        @st.cache_data
-        def convert_df(df):
-            #conversão do dado
-            return df.to_csv(sep=';', decimal=',', index=False).encode('utf-8-sig')
-        
-        csv = convert_df(geral_selection3)
+            #opção de download dos dados em excel
+            @st.cache_data
+            def convert_df(df):
+                #conversão do dado
+                return df.to_csv(sep=';', decimal=',', index=False).encode('utf-8-sig')
+            
+            csv = convert_df(geral_selection3)
 
-        st.download_button(
-            label="Download Analise",
-            data=csv,
-            file_name='Analise de Leitura.csv',
-            mime='text/csv'
-        )
+            st.download_button(
+                label="Download Analise",
+                data=csv,
+                file_name='Analise de Leitura.csv',
+                mime='text/csv'
+            )
 
  
 
