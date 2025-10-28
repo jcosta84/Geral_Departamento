@@ -17,11 +17,8 @@ class depfactFrame(ctk.CTkFrame):
         self.menu_selector.pack(pady=20)
         self.menu_selector.set("Importação")  # seleciona inicialmente
 
-        self.menu_selector.pack(pady=20)
-        self.menu_selector.set("Importação")  # seleciona inicialmente
-
         # Separador visual
-        ctk.CTkLabel(self, text="-" * 900).pack(pady=5)  # substitui st.markdown("---")
+        ctk.CTkLabel(self, text="---" * 900).pack(pady=5)  # substitui st.markdown("---")
 
         # Área principal de conteúdo
         self.area_conteudo = ctk.CTkLabel(self, text="Importação", font=("Arial", 20))
