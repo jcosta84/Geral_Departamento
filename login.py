@@ -533,7 +533,6 @@ if st.session_state.logged_in:
         )
         st.markdown("---")
         #campo de importação
-
         if menu == "Importação":
             st.title("Importação")
 
@@ -563,7 +562,6 @@ if st.session_state.logged_in:
                         st.success("Dados inseridos com sucesso!")
                     except Exception as e:
                         st.error(f"Erro ao inserir dados: {e}")
-                
         
         #campo de Dashboard
         if menu == "Dashboard":
