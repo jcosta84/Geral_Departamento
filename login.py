@@ -932,8 +932,6 @@ if st.session_state.logged_in:
                 mime='text/csv'
             )
          
-
-
     elif selected == "Dep. Gestão Contagem":
         st.title("Dep. Gestão Contagens")
         
@@ -1275,8 +1273,6 @@ if st.session_state.logged_in:
             mime='text/csv'
         )
 
- 
-
     elif selected == "Dep. Contratação":
         st.title("Dep. Contratação")
         st.write("Área para Contratação.")
@@ -1314,7 +1310,6 @@ if st.session_state.logged_in:
                     st.success("Dados inseridos com sucesso!")
                 except Exception as e:
                     st.error(f"Erro ao inserir dados: {e}")
-
 
     elif selected == "Administração":
         st.title("Painel Administrativo")
@@ -1420,7 +1415,6 @@ if st.session_state.logged_in:
                         #st.experimental_rerun()
                 except Exception as e:
                     st.error(f"Erro ao excluir: {e}")
-
 
     elif selected == "Definição":
         st.title("Configuração de Conta")
