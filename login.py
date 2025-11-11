@@ -14,6 +14,7 @@ from urllib.parse import quote_plus
 import plotly.express as px
 from datetime import datetime
 from io import StringIO
+import os
 
 
 #tabela Unidade
@@ -418,8 +419,14 @@ def atualizar_senha(id_usuario, nova_senha):
     finally:
         session.close()
 
-#ler arquivo config.json
-with open("config/config.json") as f:
+# Pega o diretório onde este script (login.py) está salvo
+base_dir = os.path.dirname(os.path.abspath(__file__))
+
+# Monta o caminho absoluto do config.json
+config_path = os.path.join(base_dir, "config", "config.json")
+
+# Lê o arquivo config.json
+with open(config_path, "r", encoding="utf-8") as f:
     config = json.load(f)
 
 #criar ligação a base de dados
@@ -556,10 +563,20 @@ if st.session_state.logged_in:
                 regfact = regfact[['Regiao', 'Unidade', 'CIL', 'CLI_ID', 'CLI_CONTA', 'Tipo_Cliente','Produto', 'Tipo_Factura', 'NR_FACT', 'DT_PROC', 'DT_FACT', 'Tarifa', 
                                     'VAL_TOT', 'CONCEITO', 'QTDE', 'VALOR']]
                 
+                #filtar conceito x30 na tabela
+                regfact = regfact.loc[regfact['CONCEITO'] == 'X30']
+                
                 #função de carregar factura na base de dados    
                 if st.button("Guardar Facturação"):
                     try:
-                        regfact.to_sql("facturação", con=engine, if_exists="append", index=False)
+                        with engine.begin() as conn:
+                            regfact.to_sql(
+                                "facturação",
+                                con=conn,
+                                if_exists="append",
+                                index=False,
+                                chunksize=10000  # insere em blocos de 10 mil linhas
+                            )
                         st.success("Dados inseridos com sucesso!")
                     except Exception as e:
                         st.error(f"Erro ao inserir dados: {e}")
@@ -1179,102 +1196,120 @@ if st.session_state.logged_in:
 
         if menu == "Analise Leituras":
             st.title("Analise")
-            query = "SELECT * FROM base_remota"
-            base = pd.read_sql(query, engine)
-            query = "SELECT * FROM contador"
-            contador2 = pd.read_sql(query, engine)
-            query = "SELECT * FROM periodo"
-            periodo2 = pd.read_sql(query, engine)
-            
-            #Definir remota
-            contador2.loc[contador2['Nº Contador'] >= 0, "Tipo Contador"] = "Leitura Remota"
-            
-            
-            
-            # definir coluna com condições
-            base['Diferença'] = base['Atual'] - base['Anterior']
+            # === Leitura das tabelas do banco ===
+            try:
+                base = pd.read_sql("SELECT * FROM base_remota", engine)
+                contador2 = pd.read_sql("SELECT * FROM contador", engine)
+                periodo2 = pd.read_sql("SELECT * FROM periodo", engine)
+            except Exception as e:
+                st.error(f"Erro ao carregar dados do banco: {e}")
+                st.stop()
 
-            base.loc[base['Diferença'] < 0, "Analise Leitura"] = "Volta de Contador"
-            base.loc[base['Diferença'] == 0, "Analise Leitura"] = "Contador Parado"
-            base.loc[base['Diferença'] > 0, "Analise Leitura"] = "Local Com Consumo"
+            # --- Verificar se as tabelas têm dados ---
+            if base.empty or contador2.empty or periodo2.empty:
+                st.warning("Uma ou mais tabelas estão vazias. Verifique o banco de dados.")
+                st.stop()
 
-            #junção de contador + função + cil
-            base['CIL/Contador'] = base['CIL'].astype(str) + '-' + base['Número'].astype(str)
-            contador2['CIL/Contador'] = contador2['CIL'].astype(str) + '-' + contador2['Nº Contador'].astype(str)
-            #alterar ordem
-            contador2 = contador2.loc[:,['CIL/Contador', 'Tipo Contador']]
+            # === Definir tipo de contador remoto ===
+            if 'Nº Contador' in contador2.columns:
+                contador2.loc[contador2['Nº Contador'] >= 0, "Tipo Contador"] = "Leitura Remota"
+            else:
+                st.error("A coluna 'Nº Contador' não foi encontrada em 'contador'.")
+                st.write("Colunas disponíveis:", contador2.columns.tolist())
+                st.stop()
 
-            #definir nos it's os locais que são de leitura remota
+            # === Criar coluna de diferença de leitura ===
+            if {'Atual', 'Anterior'}.issubset(base.columns):
+                base['Diferença'] = base['Atual'] - base['Anterior']
+                base.loc[base['Diferença'] < 0, "Analise Leitura"] = "Volta de Contador"
+                base.loc[base['Diferença'] == 0, "Analise Leitura"] = "Contador Parado"
+                base.loc[base['Diferença'] > 0, "Analise Leitura"] = "Local Com Consumo"
+            else:
+                st.error("As colunas 'Atual' e 'Anterior' não existem em 'base_remota'.")
+                st.write("Colunas disponíveis:", base.columns.tolist())
+                st.stop()
+
+            # === Junção contador + base ===
+            if {'CIL', 'Número'}.issubset(base.columns):
+                base['CIL/Contador'] = base['CIL'].astype(str) + '-' + base['Número'].astype(str)
+            else:
+                st.error("A tabela 'base_remota' não contém colunas 'CIL' e 'Número'.")
+                st.stop()
+
+            if {'CIL', 'Nº Contador'}.issubset(contador2.columns):
+                contador2['CIL/Contador'] = contador2['CIL'].astype(str) + '-' + contador2['Nº Contador'].astype(str)
+            else:
+                st.error("A tabela 'contador' não contém colunas 'CIL' e 'Nº Contador'.")
+                st.stop()
+
+            contador2 = contador2.loc[:, ['CIL/Contador', 'Tipo Contador']]
             contador_geral = pd.merge(base, contador2, on='CIL/Contador', how='left')
 
-            #alterar ordem de apresentação
-            contador_geral = contador_geral.loc[:,
-                    ['Unidade', 'Analise Leitura', 'Tipo Contador','Diferença', 'Nr. Roteiro', 'Roteiro', 'Ciclo', 'Itinerário', 'Zona ', ' Rua ', ' Cliente',
-                    'Ponto de Medida', 'CIL', 'Número', 'Marca', 'Função','Anterior', 'Atual', 'Anomalia']]
+            # === Ajustar ordem e juntar com período ===
+            colunas_base = [
+                'Unidade', 'Analise Leitura', 'Tipo Contador', 'Diferença',
+                'Nr. Roteiro', 'Roteiro', 'Ciclo', 'Itinerário', 'Zona ', ' Rua ',
+                ' Cliente', 'Ponto de Medida', 'CIL', 'Número', 'Marca', 'Função',
+                'Anterior', 'Atual', 'Anomalia'
+            ]
+            contador_geral = contador_geral[[c for c in colunas_base if c in contador_geral.columns]]
+
             cont_geral = pd.merge(contador_geral, periodo2, on='CIL', how='left')
-            
-            #alterar ordem de apresentação
-            cont_geral = cont_geral.loc[:,
-                    ['Tipo Contador','Diferença', 'periodo', 'Analise Leitura', 'Unidade', 'Nr. Roteiro', 'Roteiro', 'Ciclo', 'Itinerário', 'Zona ', ' Rua ', ' Cliente',
-                    'Ponto de Medida', 'CIL', 'Número', 'Marca', 'Função','Anterior', 'Atual', 'Anomalia']]
+            colunas_final = [
+                'Tipo Contador', 'Diferença', 'periodo', 'Analise Leitura', 'Unidade',
+                'Nr. Roteiro', 'Roteiro', 'Ciclo', 'Itinerário', 'Zona ', ' Rua ', ' Cliente',
+                'Ponto de Medida', 'CIL', 'Número', 'Marca', 'Função', 'Anterior', 'Atual', 'Anomalia'
+            ]
+            cont_geral = cont_geral[[c for c in colunas_final if c in cont_geral.columns]]
 
-        #definir campos de pesquisa para tipo de leitura
-        st.sidebar.header("Definir Tipo de Leitura:")
-        tp_leit = st.sidebar.multiselect(
-            "Definir Contador",
-            options=cont_geral['Tipo Contador'].unique(),
+            # === Filtros laterais ===
+            st.sidebar.header("Definir Tipo de Leitura:")
+            tp_leit = st.sidebar.multiselect(
+                "Definir Contador",
+                options=cont_geral['Tipo Contador'].dropna().unique()
+            )
+            geral_selection = cont_geral.query("`Tipo Contador` == @tp_leit") if tp_leit else cont_geral
 
-        )
-        geral_selection = cont_geral.query(
-        "`Tipo Contador` == @tp_leit"
-        )
+            st.sidebar.header("Definir Período:")
+            pe_leit = st.sidebar.multiselect(
+                "Definir Formato de Leitura",
+                options=cont_geral['periodo'].dropna().unique()
+            )
+            geral_selection2 = geral_selection.query("`periodo` == @pe_leit") if pe_leit else geral_selection
 
-        #definir campos de pesquisa para periodo de leitura
-        st.sidebar.header("Definir Periodo:")
-        pe_leit = st.sidebar.multiselect(
-            "Definir Formato de Leitura",
-            options=cont_geral['periodo'].unique(),
+            st.sidebar.header("Definir Leitura:")
+            dif_leit = st.sidebar.multiselect(
+                "Definir Formato de Leitura",
+                options=cont_geral['Analise Leitura'].dropna().unique()
+            )
+            geral_selection3 = geral_selection2.query("`Analise Leitura` == @dif_leit") if dif_leit else geral_selection2
 
-        )
-        geral_selection2 = geral_selection.query(
-        "`periodo` == @pe_leit"
-        )        
+            # === Organizar resultado final ===
+            colunas_saida = [
+                'Unidade', 'Nr. Roteiro', 'Roteiro', 'Ciclo', 'Itinerário', 'Zona ', ' Rua ', ' Cliente',
+                'Ponto de Medida', 'CIL', 'Número', 'Marca', 'Função', 'Anterior', 'Atual', 'Anomalia'
+            ]
+            geral_selection3 = geral_selection3[[c for c in colunas_saida if c in geral_selection3.columns]]
 
-        #definir campos de pesquisa para periodo de leitura
-        st.sidebar.header("Definir Leitura:")
-        dif_leit = st.sidebar.multiselect(
-            "Definir Formato de Leitura",
-            options=cont_geral['Analise Leitura'].unique(),
+            if not geral_selection3.empty:
+                geral_selection3.set_index('Unidade', inplace=True)
+                st.dataframe(geral_selection3)
+            else:
+                st.info("Nenhum registro encontrado com os filtros selecionados.")
 
-        )
-        geral_selection3 = geral_selection2.query(
-        "`Analise Leitura` == @dif_leit"
-        )        
+            # === Download ===
+            @st.cache_data
+            def convert_df(df):
+                return df.to_csv(sep=';', decimal=',', index=False).encode('utf-8-sig')
 
-        #alterar ordem de apresentação
-        geral_selection3 = geral_selection3.loc[:,
-                    ['Unidade', 'Nr. Roteiro', 'Roteiro', 'Ciclo', 'Itinerário', 'Zona ', ' Rua ', ' Cliente',
-                    'Ponto de Medida', 'CIL', 'Número', 'Marca', 'Função','Anterior', 'Atual', 'Anomalia']]
-
-        # remover coluna de index
-        geral_selection3.set_index('Unidade', inplace=True)
-        st.dataframe(geral_selection3)
-
-        #opção de download dos dados em excel
-        @st.cache_data
-        def convert_df(df):
-            #conversão do dado
-            return df.to_csv(sep=';', decimal=',', index=False).encode('utf-8-sig')
-        
-        csv = convert_df(geral_selection3)
-
-        st.download_button(
-            label="Download Analise",
-            data=csv,
-            file_name='Analise de Leitura.csv',
-            mime='text/csv'
-        )
-
+            if not geral_selection3.empty:
+                csv = convert_df(geral_selection3)
+                st.download_button(
+                    label="📥 Download Análise",
+                    data=csv,
+                    file_name='Analise_de_Leitura.csv',
+                    mime='text/csv'
+                )
  
 
     elif selected == "Dep. Contratação":
