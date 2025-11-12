@@ -1034,11 +1034,7 @@ if st.session_state.logged_in:
     elif selected == "Definição":
         st.title("Configuração de Conta")
 
-        
-
-        
                
-
 
     if st.sidebar.button("Logout"):
         st.session_state.logged_in = False
