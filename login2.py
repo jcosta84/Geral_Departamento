@@ -15,6 +15,9 @@ import plotly.express as px
 from datetime import datetime
 from io import StringIO
 import os
+from datetime import date
+import re
+import traceback
 
 
 #tabela Unidade
@@ -290,6 +293,9 @@ dados10 = [['0', 'Sem Contrato'],
 est_contr = pd.DataFrame(dados10, columns=['EST CONTR', 'Estado Contrato'])
 #est_contr.set_index('EST CONTR', inplace=True)
 
+#lista uc's
+local = pd.DataFrame({"UCS": ["Praia", "São Domingos", "Santa Catarina", "Tarrafal", "Calheta", "Santa Cruz", "São Filipe", "Mosteiros", "Maio", "Brava"]})
+produtos = pd.DataFrame({"Prod": ["Baixa Tensão", "Baixa Tensão Especial", "Media Tensão"]})
 
 #criar cabeçalho Facturação
 colunas = ['BOA IND', 'EMP ID', 'UC', 'Prod', 'DT_PROC', 'DT_FACT', 'NR_FACT', 'CLI_ID', 'CLI_CONTA', 'CIL',
@@ -530,7 +536,7 @@ if st.session_state.logged_in:
          
     elif selected == "Dep. Gestão Contagem":
         st.title("Dep. Gestão Contagens")
-        
+        #componentes do menu de gestão de contagens
         menu = st.radio(
         "Seleção", ["Importação", "Tratamento Itinerarios", "Analise Leituras"], horizontal=True
         )
@@ -892,39 +898,138 @@ if st.session_state.logged_in:
         st.title("Dep. Contratação")
         st.write("Área para Contratação.")
 
-        #query importar contratos
-        query = "SELECT * FROM contratos"
-        arquivo = st.file_uploader("Importar Contratos", type=["txt"])
-        if arquivo is not None:   # <- mesma indentação que a linha acima
-            df = pd.read_csv(
-                arquivo,
-                sep="\t",
-                header=None,
-                names=colunas2,
-                dtype=str,
-                encoding="utf-8-sig",
-                engine="python",
-                on_bad_lines="warn"
-    )
-            df['UC'] = df['UC'].astype(int)
-            st.success("Arquivo carregado com sucesso!")
-            contest = pd.merge(df, est_contr, on='EST CONTR', how='left')
-            contrtp = pd.merge(contest, tip_client, on='TP_CLI', how='left')
-            contruc = pd.merge(contrtp, unidade, on='UC', how='left')
-            contreg = pd.merge(contruc, regiao, on='Unidade', how='left')
-            contrpro = pd.merge(contreg, produto, on='Prod', how='left')
-            contrpro = contrpro[["EMP ID", "Regiao","Unidade", "USR ID", "NIP", "PORTA", "CIL", "SIS ABAST", "CGV",
-                                        "CLI CONTA", "Tipo_Cliente", "CAE ID", "TP USO", "NOME", "MORADA", "LOCALIDADE",
-                                        "COD LOCAL", "Produto", "COD TARIFA", "SEQ CONTR", "Estado Contrato",
-                                        "DT CONTRATO", "DT INICIO", "DT BAIXA"]]
-            
-            #função de carregar contratos na base de dados    
-            if st.button("Guardar Facturação"):
-                try:
-                    contrpro.to_sql("contratos", con=engine, if_exists="replace", index=False)
-                    st.success("Dados inseridos com sucesso!")
-                except Exception as e:
-                    st.error(f"Erro ao inserir dados: {e}")
+        menu = st.radio(
+        "Seleção", ["Cadastro", "Consultar Estado", "Importação"], horizontal=True
+        )
+
+        #campo de cadastro de clientes novos
+        if menu == "Cadastro":
+            st.subheader("Cadastro de Novos Clientes")
+
+            # 🔹 Inicializa o atributo reset_fields se ainda não existir
+            if "reset_fields" not in st.session_state:
+                st.session_state.reset_fields = False
+           # Se for para limpar, resetar os valores padrão
+            if st.session_state.reset_fields:
+                st.session_state.clear()
+                st.session_state.reset_fields = False
+
+            with st.form("form_cadastro_cliente", clear_on_submit=True):
+                nome_escolhido = st.selectbox(
+                    "Selecionar Unidade Comercial",
+                    options=local["UCS"].tolist(),
+                    key="nome_escolhido",
+
+                )
+                uc = nome_escolhido
+                nome = st.text_input("NOME", value=nome_escolhido, key="nome")
+                morada = st.text_input("MORADA", key="morada")
+                localidade = st.text_input("LOCALIDADE", key="localidade")
+                produtos_escolhidos = st.selectbox(
+                    "Selecionar Produto",
+                    options=produtos["Prod"].tolist(),
+                    key="produtos_escolhidos",  
+                )
+                produto = produtos_escolhidos
+                telefone = st.text_input("TELEFONE", key="telefone")
+                movel = st.text_input("TELEMÓVEL", key="movel")
+                email = st.text_input("EMAIL", key="email")
+                datproc = st.date_input("DATA ENTRADA PROCESSO", value=date.today(), format="DD-MM-YYYY", key="datproc")
+
+                pdf_file = st.file_uploader(
+                "📎 Carregar Ficha do Cliente (PDF)", type=["pdf"], key="pdf_file"
+            )
+
+                submitted = st.form_submit_button("💾 Cadastrar Cliente")
+
+                if submitted:
+                    # 1️⃣ Telefone e Telemóvel — só números
+                    if not telefone.isdigit() or not movel.isdigit():
+                        st.error("Telefone e Telemóvel devem conter apenas números (sem espaços, letras ou sinais).")
+                        st.stop()
+
+                    # 2️⃣ Email — formato válido
+                    if not re.match(r"^[\w\.-]+@[\w\.-]+\.\w+$", email):
+                        st.error("Insira um email válido (ex: nome@dominio.com).")
+                        st.stop()
+
+                    try:
+                        # 3️⃣ Ler PDF corretamente (bytes)
+                        pdf_bytes = pdf_file.getvalue() if pdf_file else None
+
+                        # 4️⃣ Inserção SQL segura
+                        with engine.begin() as conn:
+                            query = text("""
+                                INSERT INTO clientes (
+                                    UC, NOME, MORADA, LOCALIDADE, PRODUTO,
+                                    TELEFONE, TELEMOVEL, EMAIL, DATA_ENTRADA_PROCESSO, PDF_DOCUMENTO
+                                )
+                                VALUES (
+                                    :uc, :nome, :morada, :localidade, :produto,
+                                    :telefone, :movel, :email, :datproc, :pdf_bytes
+                                )
+                            """)
+                            conn.execute(query, {
+                                "uc": uc,
+                                "nome": nome,
+                                "morada": morada,
+                                "localidade": localidade,
+                                "produto": produto,
+                                "telefone": telefone,
+                                "movel": movel,
+                                "email": email,
+                                "datproc": datproc.strftime("%Y-%m-%d"),
+                                "pdf_bytes": pdf_bytes
+                            })
+
+                        st.success(f"✅ Cliente '{nome}' cadastrado com sucesso!")
+                        if pdf_file:
+                            st.info("📄 PDF guardado na base de dados.")
+                        else:
+                            st.warning("⚠️ Cliente cadastrado sem PDF.")
+
+                        # --- Limpar campos ---
+                        st.session_state.reset_fields = True
+                        st.rerun()
+
+                    except Exception as e:
+                        st.error("❌ Erro ao cadastrar cliente:")
+                        st.code(traceback.format_exc())
+
+        if menu == "Importação":
+            #query importar contratos
+            query = "SELECT * FROM contratos"
+            arquivo = st.file_uploader("Importar Contratos", type=["txt"])
+            if arquivo is not None:   # <- mesma indentação que a linha acima
+                df = pd.read_csv(
+                    arquivo,
+                    sep="\t",
+                    header=None,
+                    names=colunas2,
+                    dtype=str,
+                    encoding="utf-8-sig",
+                    engine="python",
+                    on_bad_lines="warn"
+        )
+                df['UC'] = df['UC'].astype(int)
+                st.success("Arquivo carregado com sucesso!")
+                contest = pd.merge(df, est_contr, on='EST CONTR', how='left')
+                contrtp = pd.merge(contest, tip_client, on='TP_CLI', how='left')
+                contruc = pd.merge(contrtp, unidade, on='UC', how='left')
+                contreg = pd.merge(contruc, regiao, on='Unidade', how='left')
+                contrpro = pd.merge(contreg, produto, on='Prod', how='left')
+                contrpro = contrpro[["EMP ID", "Regiao","Unidade", "USR ID", "NIP", "PORTA", "CIL", "SIS ABAST", "CGV",
+                                            "CLI CONTA", "Tipo_Cliente", "CAE ID", "TP USO", "NOME", "MORADA", "LOCALIDADE",
+                                            "COD LOCAL", "Produto", "COD TARIFA", "SEQ CONTR", "Estado Contrato",
+                                            "DT CONTRATO", "DT INICIO", "DT BAIXA"]]
+                
+                #função de carregar contratos na base de dados    
+                if st.button("Guardar Facturação"):
+                    try:
+                        contrpro.to_sql("contratos", con=engine, if_exists="replace", index=False)
+                        st.success("Dados inseridos com sucesso!")
+                    except Exception as e:
+                        st.error(f"Erro ao inserir dados: {e}")
 
     elif selected == "Administração":
         st.title("Painel Administrativo")
