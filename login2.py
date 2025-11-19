@@ -15,6 +15,9 @@ import plotly.express as px
 from datetime import datetime
 from io import StringIO
 import os
+from datetime import date
+import re
+import traceback
 
 
 #tabela Unidade
@@ -290,6 +293,9 @@ dados10 = [['0', 'Sem Contrato'],
 est_contr = pd.DataFrame(dados10, columns=['EST CONTR', 'Estado Contrato'])
 #est_contr.set_index('EST CONTR', inplace=True)
 
+#lista uc's
+local = pd.DataFrame({"UCS": ["Praia", "São Domingos", "Santa Catarina", "Tarrafal", "Calheta", "Santa Cruz", "São Filipe", "Mosteiros", "Maio", "Brava"]})
+produtos = pd.DataFrame({"Prod": ["Baixa Tensão", "Baixa Tensão Especial", "Media Tensão"]})
 
 #criar cabeçalho Facturação
 colunas = ['BOA IND', 'EMP ID', 'UC', 'Prod', 'DT_PROC', 'DT_FACT', 'NR_FACT', 'CLI_ID', 'CLI_CONTA', 'CIL',
@@ -498,11 +504,9 @@ if st.session_state.logged_in:
     #'admin', 'gerente', 'factura', 'usuario', 'contagem', 'contrato'
     # Menu de opções conforme o nível de acesso
     if st.session_state.nivel == "admin":
-        menu_opcoes = ["Home", "DAC - Lojas","Dep. Facturação", "Dep. Gestão Contagem", "Dep. Contratação","Administração"]
+        menu_opcoes = ["Home", "DAC - Lojas", "Dep. Gestão Contagem", "Dep. Contratação","Administração"]
     elif st.session_state.nivel == "gerente":
-        menu_opcoes = ["Home", "DAC - Lojas","Dep. Facturação", "Dep. Gestão Contagem", "Dep. Contratação", "Definição"]
-    elif st.session_state.nivel == "factura":
-        menu_opcoes = ["Home", "Dep. Facturação", "Definição"]
+        menu_opcoes = ["Home", "DAC - Lojas","Dep. Gestão Contagem", "Dep. Contratação", "Definição"]
     elif st.session_state.nivel == "contagem":
         menu_opcoes = ["Home", "Dep. Gestão Contagem", "Definição"]
     elif st.session_state.nivel == "contrato":
@@ -525,431 +529,14 @@ if st.session_state.logged_in:
     if selected == "Home":
         st.title("Home")
         st.write("Bem-vindo à sua dashboard!")
-        
-
-
+      
     elif selected == "DAC - Lojas":
         st.title("DAC - Lojas")
         st.write("Área exclusiva para lojas.")
-    
-    elif selected == "Dep. Facturação":
-        st.title("Dep. Facturação")
-        #st.title("Facturação")
-        menu = st.radio(
-        "Seleção", ["Importação", "Dashboard", "Analise Maturidade"], horizontal=True
-        )
-        st.markdown("---")
-        #campo de importação
-        if menu == "Importação":
-            st.title("Importação")
-
-            #query importar facturação
-            query = "SELECT * FROM facturação"
-            upload_file = st.file_uploader("Importar Facturação", type=["txt"])
-            if upload_file:
-                st.markdown("---")
-                content = upload_file.read().decode("utf-8")
-                factura = pd.read_csv(io.StringIO(content), sep='\t', names=colunas)
-                factuc = pd.merge(factura, unidade, on='UC', how='left')
-                prodfact = pd.merge(factuc, produto, on='Prod', how='left')
-                tpfact = pd.merge(prodfact, tp_fact, on='TP_FACT', how='left')
-                tpfact['TP_CLI'] = tpfact['TP_CLI'].astype(str)
-                clifact = pd.merge(tpfact, tip_client, on='TP_CLI', how='left')
-                confact = pd.merge(clifact, tarifa, on='COD_TARIFA', how='left')
-                regfact = pd.merge(confact, regiao, on='Unidade', how='left')
-
-                #organizar estrutura
-                regfact = regfact[['Regiao', 'Unidade', 'CIL', 'CLI_ID', 'CLI_CONTA', 'Tipo_Cliente','Produto', 'Tipo_Factura', 'NR_FACT', 'DT_PROC', 'DT_FACT', 'Tarifa', 
-                                    'VAL_TOT', 'CONCEITO', 'QTDE', 'VALOR']]
-                
-                #filtar conceito x30 na tabela
-                regfact = regfact.loc[regfact['CONCEITO'] == 'X30']
-                
-                #função de carregar factura na base de dados    
-                if st.button("Guardar Facturação"):
-                    try:
-                        with engine.begin() as conn:
-                            regfact.to_sql(
-                                "facturação",
-                                con=conn,
-                                if_exists="append",
-                                index=False,
-                                chunksize=10000  # insere em blocos de 10 mil linhas
-                            )
-                        st.success("Dados inseridos com sucesso!")
-                    except Exception as e:
-                        st.error(f"Erro ao inserir dados: {e}")
-        
-        #campo de Dashboard
-        if menu == "Dashboard":
-            st.title("Dashboard")
-            facturas_tratadas = tratar_factura()
-
-            #dividir em colunas
-            col1, col2, col3 = st.columns(3)
-
-            #col1
-            with col1:
-                #filtrar região
-                reg = st.multiselect(
-                    "Definir Região: ",
-                    options=facturas_tratadas['Regiao'].unique(),
-                )
-
-                geral_selection = facturas_tratadas.query(
-                    "`Regiao` == @reg"
-                )
-            
-            #col2
-            with col2:
-                #filtar ano
-                an = st.multiselect(
-                    "Definir Ano: ",
-                    options=geral_selection['Ano'].unique(),
-
-                )
-                geral_selection2 = geral_selection.query(
-                    "`Ano` == @an"
-                )
-
-            #col3
-            with col3:
-                #filtrar mês
-                me = st.multiselect(
-                    "Definir Mês",
-                    options=geral_selection2['Mês'].unique(),
-
-                )
-                geral_selection3 = geral_selection2.query(
-                    "`Mês` == @me"
-                )
-            
-            #criação de tabela dinamica por unidade
-            tabdinamica = geral_selection3.pivot_table(
-                index=['Unidade'],
-                values=['Valor Facturado', 'Kwh'],
-                aggfunc='sum',
-                fill_value=0
-            )
-                        
-            #criação de tabela dinamica por Tipo Cliente
-            tabdinamica2 = geral_selection3.pivot_table(
-                index=['Tipo Cliente'],
-                values=['Valor Facturado', 'Kwh'],
-                aggfunc='sum',
-                fill_value=0
-            )
-
-             #criação de tabela dinamica por Produto
-            tabdinamica3 = geral_selection3.pivot_table(
-                index=['Produto'],
-                values=['Valor Facturado', 'Kwh'],
-                aggfunc='sum',
-                fill_value=0
-            )
-
-            #criação de graficos por Unidade coemrcial
-            #grafico UC Facturado
-            fig_ucval = px.bar(
-                tabdinamica,
-                x=tabdinamica.index,
-                y=['Valor Facturado'],
-                orientation="v",
-                title="<b>Grafico Valor Facturado Por Unidade</b>",
-                color_discrete_sequence=["#5F9EA0"],
-                template="plotly_white",
-            )
-            fig_ucval.update_layout(
-                plot_bgcolor="rgba(0,0,0,0)",
-                xaxis=(dict(showgrid=False))
-
-            )
-
-            #grafico UC Kwh
-            fig_ucquant = px.bar(
-                tabdinamica,
-                x=tabdinamica.index,
-                y=['Kwh'],
-                orientation="v",
-                title="<b>Grafico Consumo Por Unidade</b>",
-                color_discrete_sequence=["#B22222"],                
-                template="plotly_white",
-            )
-            fig_ucquant.update_layout(
-                plot_bgcolor="rgba(0,0,0,0)",
-                xaxis=(dict(showgrid=False))
-            )
-
-
-            #criação de graficos por Tipo Cliente
-            #grafico tipo cliente Facturado
-            fig_tipval = px.bar(
-                tabdinamica2,
-                x=tabdinamica2.index,
-                y=['Valor Facturado'],
-                orientation="v",
-                title="<b>Grafico Valor Facturado Tipo Cliente</b>",
-                color_discrete_sequence=["#5F9EA0"],
-                template="plotly_white",
-            )
-            fig_tipval.update_layout(
-                plot_bgcolor="rgba(0,0,0,0)",
-                xaxis=(dict(showgrid=False))
-
-            )
-
-            #grafico tipo cliente Kwh
-            fig_tipquant = px.bar(
-                tabdinamica2,
-                x=tabdinamica2.index,
-                y=['Kwh'],
-                orientation="v",
-                title="<b>Grafico Consumo Tipo Cliente</b>",
-                color_discrete_sequence=["#B22222"],                
-                template="plotly_white",
-            )
-            fig_tipquant.update_layout(
-                plot_bgcolor="rgba(0,0,0,0)",
-                xaxis=(dict(showgrid=False))
-            )
-
-            #criação de graficos por Produto
-            #grafico produto Facturado
-            fig_proval = px.bar(
-                tabdinamica3,
-                x=tabdinamica3.index,
-                y=['Valor Facturado'],
-                orientation="v",
-                title="<b>Grafico Valor Facturado Produto</b>",
-                color_discrete_sequence=["#5F9EA0"],
-                template="plotly_white",
-            )
-            fig_proval.update_layout(
-                plot_bgcolor="rgba(0,0,0,0)",
-                xaxis=(dict(showgrid=False))
-
-            )
-
-            #grafico tipo cliente Kwh
-            fig_proquant = px.bar(
-                tabdinamica3,
-                x=tabdinamica3.index,
-                y=['Kwh'],
-                orientation="v",
-                title="<b>Grafico Consumo Produto</b>",
-                color_discrete_sequence=["#B22222"],                
-                template="plotly_white",
-            )
-            fig_proquant.update_layout(
-                plot_bgcolor="rgba(0,0,0,0)",
-                xaxis=(dict(showgrid=False))
-            )
-            
-            #apresentar tabela dinamica na frame
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.header("Facturação Por Unidade")
-                st.dataframe(tabdinamica, column_config={"Unidade": st.column_config.TextColumn("Unidade", width="medium"),
-                                                         "Kwh": st.column_config.NumberColumn("Kwh", width="small"),
-                                                          "Valor Facturado": st.column_config.NumberColumn("Valor Facturado", width="medium")})
-            
-            with col2:
-                st.header("Facturação Por Tipo Cliente")
-                st.dataframe(tabdinamica2, column_config={"Tipo Cliente": st.column_config.TextColumn("Tipo Cliente", width="medium"),
-                                                          "Kwh": st.column_config.NumberColumn("Kwh", width="small"),
-                                                          "Valor Facturado": st.column_config.NumberColumn("Valor Facturado", width="medium")})
-            
-            with col3:
-                st.header("Facturação Por Produto")
-                st.dataframe(tabdinamica3, column_config={"Produto": st.column_config.TextColumn("Produto", width="medium"),
-                                                             "Kwh": st.column_config.NumberColumn("Kwh", width="small"),
-                                                            "Valor Facturado": st.column_config.NumberColumn("Valor Facturado", width="medium")})
-            
-             #graficos po unidade comercial
-            st.header("Grafico Unidade Comercial")
-
-            #apresentar os graficos em colunas
-            left_column, right_column = st.columns(2)
-            left_column.plotly_chart(fig_ucval, use_container_width=True)
-            right_column.plotly_chart(fig_ucquant, use_container_width=True)
-
-            st.markdown("---")
-            #graficos por tipo cliente
-            st.header("Grafico Tipo de Cliente")
-
-            #apresentar os graficos em colunas
-            left_column, right_column = st.columns(2)
-            left_column.plotly_chart(fig_tipval, use_container_width=True)
-            right_column.plotly_chart(fig_tipquant, use_container_width=True)
-
-            st.markdown("---")
-            #graficos por Produto
-            st.header("Grafico Produto")
-
-            #apresentar os graficos em colunas
-            left_column, right_column = st.columns(2)
-            left_column.plotly_chart(fig_proval, use_container_width=True)
-            right_column.plotly_chart(fig_proquant, use_container_width=True)
-
-            st.markdown("---")
-            st.header("Quadro Facturação")
-            #organizar
-            geral_selection3 = geral_selection3[['Unidade', 'CIL', 'Cliente', 'Cliente Conta', 'Tipo Cliente','Produto', 'Tipo Factura', 'Nº Factura', 
-                                                 'Data Processamento', 'Data Facturação', 'Tarifa', 'Valor Facturado', 'CONCEITO', 'Kwh', 'Valor Cons (ECV)']]
-                     
-            st.dataframe(geral_selection3, use_container_width=True, hide_index=True)
-
-            #opção de download dos dados em excel
-            @st.cache_data
-            def convert_df(df):
-                #conversão do dado
-                return df.to_csv(sep=';', decimal=',', index=False).encode('utf-8-sig')
-            
-            csv = convert_df(geral_selection3)
-
-            st.download_button(
-                label="Download Facturação",
-                data=csv,
-                file_name='Script Facturação Tratado.csv',
-                mime='text/csv'
-            )
-            #st.dataframe(facturas_tratadas, use_container_width=True, hide_index=True)
-    
-        #campo de Analise Matiridade
-        if menu == "Analise Maturidade":
-            st.title("Analise Maturidade")
-            facturas_maturidade = tratar_factura()
-            contratos_geral = importar_contratos()
-                        
-            col1, col2, col3 = st.columns(3)
-
-            #col1
-            with col1:
-                #filtrar região
-                reg = st.multiselect(
-                    "Definir Região: ",
-                    options=facturas_maturidade['Regiao'].unique(),
-                )
-
-                geral_mat = facturas_maturidade.query(
-                    "`Regiao` == @reg"
-                )
-            
-            #col2
-            with col2:
-                #filtar ano
-                an = st.multiselect(
-                    "Definir Ano: ",
-                    options=geral_mat['Ano'].unique(),
-
-                )
-                geral_mat2 = geral_mat.query(
-                    "`Ano` == @an"
-                )
-            
-            tab_di = pd.pivot_table(
-                geral_mat2,
-                index=['CIL', 'Cliente Conta'],
-                columns='Mês',
-                values='Kwh',
-                aggfunc='sum',
-                fill_value=0
-            )
-            #coluna de soma total na tabela dinamica
-            tab_di['Media Consumo Geral'] = tab_di.sum(axis=1)
-            #função se tendo em consideração a coluna de soma total
-            tab_di["Maturidade de consumo"] = tab_di["Media Consumo Geral"].apply(classificar_maturidade)
-            tab_di = tab_di.reset_index()
-            
-            #concatenação cil e conta
-            tab_di['CIL Conta'] = tab_di['CIL'] + ' - ' + tab_di['Cliente Conta']
-            contratos_geral['CIL Conta'] = contratos_geral['CIL'] + ' - ' + contratos_geral['CLI CONTA']
-            contratos_geral = contratos_geral[["CIL Conta", "Regiao","Unidade", "NIP", "PORTA", "CGV", 
-                                               "Tipo_Cliente", "NOME", "MORADA", "LOCALIDADE", "Produto", "COD TARIFA", "SEQ CONTR", 
-                                               "Estado Contrato", "DT CONTRATO", "DT INICIO", "DT BAIXA"]]
-            
-            contdi = pd.merge(tab_di, contratos_geral, on='CIL Conta', how='left')
-            contdi.set_index('CIL Conta', inplace=True)
-
-            #definir botão de download numa coluna
-            col1, col2 = st.columns(2)
-            with col1:
-                #opção de download dos dados em excel
-                @st.cache_data
-                def convert_df(df):
-                    #conversão do dado
-                    return df.to_csv(sep=';', decimal=',', index=False).encode('utf-8-sig')
-                
-                csv = convert_df(contdi)
-
-                st.download_button(
-                    label="Download Facturação",
-                    data=csv,
-                    file_name='Script Facturação Tratado.csv',
-                    mime='text/csv'
-                )
-
-            #tabela dinamica numa coluna
-            left_column, midle_column = st.columns(2)
-            with col1:
-
-                #criação de tabela dinamica para maturidade
-                #quantidade de locais
-                tabdicont = pd.pivot_table(
-                    contdi,
-                    index=['Maturidade de consumo'],
-                    values='CIL',
-                    aggfunc='count',
-                    fill_value=0
-                )
-
-                #valor total consumido
-                tabdicont2 = pd.pivot_table(
-                    contdi,
-                    index=['Maturidade de consumo'],
-                    values='Media Consumo Geral',
-                    aggfunc='sum',
-                    fill_value=0
-                )
-                #merge duas tabelas de forma apresentar as informações de quantidade de consumo
-                tb_ge = pd.merge(tabdicont, tabdicont2, on='Maturidade de consumo', how='left')
-                #apresentar as duas tabelas
-                st.dataframe(tb_ge)
-            
-            with col2:
-                #definir filro para as maturidades
-                #filtrar região
-                matu = st.multiselect(
-                    "Definir Maturidade: ",
-                    options=contdi['Maturidade de consumo'].unique(),
-                )
-
-                geral_mat = contdi.query(
-                    "`Maturidade de consumo` == @matu"
-                )
-                geral_mat.set_index('CIL', inplace=True)
-                        
-            #tabela filtrada            
-            st.dataframe(geral_mat)
-
-            #opção de download dos dados em excel
-            @st.cache_data
-            def convert_df(df):
-                #conversão do dado
-                return df.to_csv(sep=';', decimal=',', index=False).encode('utf-8-sig')
-            
-            csv = convert_df(geral_mat)
-
-            st.download_button(
-                label="Download Analise Maturidade",
-                data=csv,
-                file_name='Script Facturação Por Maturidade.csv',
-                mime='text/csv'
-            )
          
     elif selected == "Dep. Gestão Contagem":
         st.title("Dep. Gestão Contagens")
-        
+        #componentes do menu de gestão de contagens
         menu = st.radio(
         "Seleção", ["Importação", "Tratamento Itinerarios", "Analise Leituras"], horizontal=True
         )
@@ -1311,39 +898,138 @@ if st.session_state.logged_in:
         st.title("Dep. Contratação")
         st.write("Área para Contratação.")
 
-        #query importar contratos
-        query = "SELECT * FROM contratos"
-        arquivo = st.file_uploader("Importar Contratos", type=["txt"])
-        if arquivo is not None:   # <- mesma indentação que a linha acima
-            df = pd.read_csv(
-                arquivo,
-                sep="\t",
-                header=None,
-                names=colunas2,
-                dtype=str,
-                encoding="utf-8-sig",
-                engine="python",
-                on_bad_lines="warn"
-    )
-            df['UC'] = df['UC'].astype(int)
-            st.success("Arquivo carregado com sucesso!")
-            contest = pd.merge(df, est_contr, on='EST CONTR', how='left')
-            contrtp = pd.merge(contest, tip_client, on='TP_CLI', how='left')
-            contruc = pd.merge(contrtp, unidade, on='UC', how='left')
-            contreg = pd.merge(contruc, regiao, on='Unidade', how='left')
-            contrpro = pd.merge(contreg, produto, on='Prod', how='left')
-            contrpro = contrpro[["EMP ID", "Regiao","Unidade", "USR ID", "NIP", "PORTA", "CIL", "SIS ABAST", "CGV",
-                                        "CLI CONTA", "Tipo_Cliente", "CAE ID", "TP USO", "NOME", "MORADA", "LOCALIDADE",
-                                        "COD LOCAL", "Produto", "COD TARIFA", "SEQ CONTR", "Estado Contrato",
-                                        "DT CONTRATO", "DT INICIO", "DT BAIXA"]]
-            
-            #função de carregar contratos na base de dados    
-            if st.button("Guardar Facturação"):
-                try:
-                    contrpro.to_sql("contratos", con=engine, if_exists="replace", index=False)
-                    st.success("Dados inseridos com sucesso!")
-                except Exception as e:
-                    st.error(f"Erro ao inserir dados: {e}")
+        menu = st.radio(
+        "Seleção", ["Cadastro", "Consultar Estado", "Importação"], horizontal=True
+        )
+
+        #campo de cadastro de clientes novos
+        if menu == "Cadastro":
+            st.subheader("Cadastro de Novos Clientes")
+
+            # 🔹 Inicializa o atributo reset_fields se ainda não existir
+            if "reset_fields" not in st.session_state:
+                st.session_state.reset_fields = False
+           # Se for para limpar, resetar os valores padrão
+            if st.session_state.reset_fields:
+                st.session_state.clear()
+                st.session_state.reset_fields = False
+
+            with st.form("form_cadastro_cliente", clear_on_submit=True):
+                nome_escolhido = st.selectbox(
+                    "Selecionar Unidade Comercial",
+                    options=local["UCS"].tolist(),
+                    key="nome_escolhido",
+
+                )
+                uc = nome_escolhido
+                nome = st.text_input("NOME", value=nome_escolhido, key="nome")
+                morada = st.text_input("MORADA", key="morada")
+                localidade = st.text_input("LOCALIDADE", key="localidade")
+                produtos_escolhidos = st.selectbox(
+                    "Selecionar Produto",
+                    options=produtos["Prod"].tolist(),
+                    key="produtos_escolhidos",  
+                )
+                produto = produtos_escolhidos
+                telefone = st.text_input("TELEFONE", key="telefone")
+                movel = st.text_input("TELEMÓVEL", key="movel")
+                email = st.text_input("EMAIL", key="email")
+                datproc = st.date_input("DATA ENTRADA PROCESSO", value=date.today(), format="DD-MM-YYYY", key="datproc")
+
+                pdf_file = st.file_uploader(
+                "📎 Carregar Ficha do Cliente (PDF)", type=["pdf"], key="pdf_file"
+            )
+
+                submitted = st.form_submit_button("💾 Cadastrar Cliente")
+
+                if submitted:
+                    # 1️⃣ Telefone e Telemóvel — só números
+                    if not telefone.isdigit() or not movel.isdigit():
+                        st.error("Telefone e Telemóvel devem conter apenas números (sem espaços, letras ou sinais).")
+                        st.stop()
+
+                    # 2️⃣ Email — formato válido
+                    if not re.match(r"^[\w\.-]+@[\w\.-]+\.\w+$", email):
+                        st.error("Insira um email válido (ex: nome@dominio.com).")
+                        st.stop()
+
+                    try:
+                        # 3️⃣ Ler PDF corretamente (bytes)
+                        pdf_bytes = pdf_file.getvalue() if pdf_file else None
+
+                        # 4️⃣ Inserção SQL segura
+                        with engine.begin() as conn:
+                            query = text("""
+                                INSERT INTO clientes (
+                                    UC, NOME, MORADA, LOCALIDADE, PRODUTO,
+                                    TELEFONE, TELEMOVEL, EMAIL, DATA_ENTRADA_PROCESSO, PDF_DOCUMENTO
+                                )
+                                VALUES (
+                                    :uc, :nome, :morada, :localidade, :produto,
+                                    :telefone, :movel, :email, :datproc, :pdf_bytes
+                                )
+                            """)
+                            conn.execute(query, {
+                                "uc": uc,
+                                "nome": nome,
+                                "morada": morada,
+                                "localidade": localidade,
+                                "produto": produto,
+                                "telefone": telefone,
+                                "movel": movel,
+                                "email": email,
+                                "datproc": datproc.strftime("%Y-%m-%d"),
+                                "pdf_bytes": pdf_bytes
+                            })
+
+                        st.success(f"✅ Cliente '{nome}' cadastrado com sucesso!")
+                        if pdf_file:
+                            st.info("📄 PDF guardado na base de dados.")
+                        else:
+                            st.warning("⚠️ Cliente cadastrado sem PDF.")
+
+                        # --- Limpar campos ---
+                        st.session_state.reset_fields = True
+                        st.rerun()
+
+                    except Exception as e:
+                        st.error("❌ Erro ao cadastrar cliente:")
+                        st.code(traceback.format_exc())
+
+        if menu == "Importação":
+            #query importar contratos
+            query = "SELECT * FROM contratos"
+            arquivo = st.file_uploader("Importar Contratos", type=["txt"])
+            if arquivo is not None:   # <- mesma indentação que a linha acima
+                df = pd.read_csv(
+                    arquivo,
+                    sep="\t",
+                    header=None,
+                    names=colunas2,
+                    dtype=str,
+                    encoding="utf-8-sig",
+                    engine="python",
+                    on_bad_lines="warn"
+        )
+                df['UC'] = df['UC'].astype(int)
+                st.success("Arquivo carregado com sucesso!")
+                contest = pd.merge(df, est_contr, on='EST CONTR', how='left')
+                contrtp = pd.merge(contest, tip_client, on='TP_CLI', how='left')
+                contruc = pd.merge(contrtp, unidade, on='UC', how='left')
+                contreg = pd.merge(contruc, regiao, on='Unidade', how='left')
+                contrpro = pd.merge(contreg, produto, on='Prod', how='left')
+                contrpro = contrpro[["EMP ID", "Regiao","Unidade", "USR ID", "NIP", "PORTA", "CIL", "SIS ABAST", "CGV",
+                                            "CLI CONTA", "Tipo_Cliente", "CAE ID", "TP USO", "NOME", "MORADA", "LOCALIDADE",
+                                            "COD LOCAL", "Produto", "COD TARIFA", "SEQ CONTR", "Estado Contrato",
+                                            "DT CONTRATO", "DT INICIO", "DT BAIXA"]]
+                
+                #função de carregar contratos na base de dados    
+                if st.button("Guardar Facturação"):
+                    try:
+                        contrpro.to_sql("contratos", con=engine, if_exists="replace", index=False)
+                        st.success("Dados inseridos com sucesso!")
+                    except Exception as e:
+                        st.error(f"Erro ao inserir dados: {e}")
 
     elif selected == "Administração":
         st.title("Painel Administrativo")
@@ -1453,11 +1139,7 @@ if st.session_state.logged_in:
     elif selected == "Definição":
         st.title("Configuração de Conta")
 
-        
-
-        
                
-
 
     if st.sidebar.button("Logout"):
         st.session_state.logged_in = False
