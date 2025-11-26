@@ -29,3 +29,21 @@ driver = config["BD_DRIVER"]
 
 
 print("Conectando com usuário:", config["BD_USER"])
+
+#para situação de espaços no driver
+#driver_encoded = quote_plus(driver)
+
+#engine = create_engine(
+    #f"mssql+pyodbc://{user}:{password}@{server}/{database}?driver={driver_encoded}",
+    #fast_executemany=True
+#)
+
+#Session = sessionmaker(bind=engine)
+#session = Session()
+#SessionLocal = sessionmaker(bind=engine)
+
+
+#query = "SELECT * FROM usurarios"
+#utilizador = pd.read_sql(query, engine)
+
+#print(utilizador)
