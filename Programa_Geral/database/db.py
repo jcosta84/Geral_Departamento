@@ -5,7 +5,7 @@ from urllib.parse import quote_plus
 # Configurações do MySQL
 server = "localhost"      # IP ou localhost
 database = "SistemaGestao"    # Nome do banco
-user = "jpaulo"               # Usuário
+user = "pj"               # Usuário
 password = "loucoste9850053" # Senha
 
 # URL de conexão com MySQL usando PyMySQL
