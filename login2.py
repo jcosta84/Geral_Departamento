@@ -896,8 +896,7 @@ if st.session_state.logged_in:
 
     elif selected == "Dep. Contratação":
         st.title("Dep. Contratação")
-        st.write("Área para Contratação.")
-
+        
         menu = st.radio(
         "Seleção", ["Cadastro", "Consultar Estado", "Importação"], horizontal=True
         )
@@ -996,6 +995,10 @@ if st.session_state.logged_in:
                         st.error("❌ Erro ao cadastrar cliente:")
                         st.code(traceback.format_exc())
 
+        if menu == "Consultar Estado":
+            query = "SELECT * FROM clientes"
+            
+                   
         if menu == "Importação":
             #query importar contratos
             query = "SELECT * FROM contratos"
