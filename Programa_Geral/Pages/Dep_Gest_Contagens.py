@@ -536,28 +536,31 @@ elif selected == "Tratamento Itinerarios":
         return re.sub(r'[\\/*?:"<>|]', "_", str(texto))
 
 
-    # --- GERAR NOME DO FICHEIRO AUTOMATICAMENTE ---
-    primeira_linha = gerit.iloc[0]
+    # Verificar se o DataFrame tem linhas
+    if gerit.empty:
+        st.error("⚠️ Nenhum dado encontrado no roteiro. Verifique o ficheiro carregado.")
+    else:
+        primeira_linha = gerit.iloc[0]
 
-    nome_roteiro = limpar_texto(primeira_linha['Roteiro'])
-    nome_itinerario = limpar_texto(primeira_linha['Itinerário'])
+        nome_roteiro = limpar_texto(primeira_linha['Roteiro'])
+        nome_itinerario = limpar_texto(primeira_linha['Itinerário'])
 
-    nome_arquivo = f"Roteiro_{nome_roteiro}_Itinerario_{nome_itinerario}.csv"
+        nome_arquivo = f"Roteiro_{nome_roteiro}_Itinerario_{nome_itinerario}.csv"
 
-    #opção de download dos dados em excel
-    @st.cache_data
-    def convert_df(df):
-        #conversão do dado
-        return df.to_csv(sep=';', decimal=',', index=False).encode('utf-8-sig')
-    
-    csv = convert_df(gerit)
+        #opção de download dos dados em excel
+        @st.cache_data
+        def convert_df(df):
+            #conversão do dado
+            return df.to_csv(sep=';', decimal=',', index=False).encode('utf-8-sig')
+        
+        csv = convert_df(gerit)
 
-    st.download_button(
-        label="Download Itinerarios",
-        data=csv,
-        file_name=nome_arquivo,
-        mime='text/csv'
-    )
+        st.download_button(
+            label="Download Itinerarios",
+            data=csv,
+            file_name=nome_arquivo,
+            mime='text/csv'
+        )
 
 # --- Análise de Leituras ---
 elif selected == "Analise Leituras":
