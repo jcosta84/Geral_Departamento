@@ -6,8 +6,7 @@ import streamlit as st
 import pandas as pd
 from streamlit_option_menu import option_menu
 from database.db import engine  # Usar engine, não SessionLocal
-
-# Adiciona a pasta raiz ao sys.path para encontrar "database" (se necessário)
+import re
 
 
 # --- Criação de tabelas adicionais para cruzamentos durante o programa ---
@@ -375,7 +374,7 @@ if selected == "Importação":
     periodo = pd.read_sql(query, engine)
     upload_file = st.file_uploader("Importar Periodo", type="xlsx")
     if upload_file:
-        
+
         periodos = pd.read_excel(upload_file, engine="openpyxl")
     #carregar na base de dados
     if st.button("Carregar Periodo"):
@@ -532,6 +531,19 @@ elif selected == "Tratamento Itinerarios":
     gerit.set_index('Nr. Roteiro', inplace=True)
     st.dataframe(gerit, use_container_width=True)
 
+    # --- FUNÇÃO PARA LIMPAR O NOME ---
+    def limpar_texto(texto):
+        return re.sub(r'[\\/*?:"<>|]', "_", str(texto))
+
+
+    # --- GERAR NOME DO FICHEIRO AUTOMATICAMENTE ---
+    primeira_linha = gerit.iloc[0]
+
+    nome_roteiro = limpar_texto(primeira_linha['Roteiro'])
+    nome_itinerario = limpar_texto(primeira_linha['Itinerário'])
+
+    nome_arquivo = f"Roteiro_{nome_roteiro}_Itinerario_{nome_itinerario}.csv"
+
     #opção de download dos dados em excel
     @st.cache_data
     def convert_df(df):
@@ -543,7 +555,7 @@ elif selected == "Tratamento Itinerarios":
     st.download_button(
         label="Download Itinerarios",
         data=csv,
-        file_name='Itinerario.csv',
+        file_name=nome_arquivo,
         mime='text/csv'
     )
 
