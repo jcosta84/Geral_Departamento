@@ -8,7 +8,8 @@ from streamlit_option_menu import option_menu
 from database.db import engine  # Usar engine, não SessionLocal
 import re
 
-
+#def app():
+    
 # --- Criação de tabelas adicionais para cruzamentos durante o programa ---
 #tabela Unidade
 dados = [['10201000', 'Praia'],
