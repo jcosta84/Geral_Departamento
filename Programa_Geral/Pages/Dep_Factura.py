@@ -7,6 +7,7 @@ import pandas as pd
 from streamlit_option_menu import option_menu
 from database.db import engine  # Usar engine, não SessionLocal
 import re
+import io
 
 #def app():
     
@@ -301,6 +302,130 @@ colunas2 = [
     "DT CONTRATO", "DT INICIO", "DT BAIXA", "OBS", "REF", ""
 ]
 
+
+#definir importação e tratamento do script facturação
+def tratar_factura():
+    query = "SELECT * FROM facturação"
+    factura2 = pd.read_sql(query, engine)
+    #filtrar consumo
+    factura2 = factura2.loc[factura2['CONCEITO'] == 'X30']
+    #remover duplicado
+    factura2 = factura2.drop_duplicates(subset='NR_FACT')
+    #alterar formato para str
+    factura2['CIL'] = factura2['CIL'].astype(str)
+    factura2['CLI_ID'] = factura2['CLI_ID'].astype(str)
+    factura2['CLI_CONTA'] = factura2['CLI_CONTA'].astype(str)
+    factura2['DT_PROC'] = factura2['DT_PROC'].astype(str)
+    factura2['DT_PROC'] = pd.to_datetime(factura2['DT_PROC'])
+    factura2['DT_PROC'] = factura2['DT_PROC'].dt.date
+    factura2['DT_FACT'] = factura2['DT_FACT'].astype(str)
+    factura2['DT_FACT'] = pd.to_datetime(factura2['DT_FACT'])
+    factura2['Ano'] = factura2['DT_FACT'].dt.year
+    factura2['Me'] = factura2['DT_FACT'].dt.month
+    factura2['Me'] = factura2['Me'].astype(str)
+    factura2['Ano'] = factura2['Ano'].astype(str)
+    factura2['DT_FACT'] = factura2['DT_FACT'].dt.date
+    factura3 = pd.merge(factura2, refmes, on='Me', how='left')
+    factura3 = factura3[['Ano', 'Regiao', 'Unidade', 'CIL', 'CLI_ID', 'CLI_CONTA', 'Tipo_Cliente','Produto', 'Tipo_Factura', 'NR_FACT',  'Mês',
+                            'DT_PROC', 'DT_FACT', 'Tarifa', 'VAL_TOT', 'CONCEITO', 'QTDE', 'VALOR']]
+
+    #alterar nome das colunas
+    factura3 = factura3.rename(columns={'CLI_ID': 'Cliente'})
+    factura3 = factura3.rename(columns={'CLI_CONTA': 'Cliente Conta'})
+    factura3 = factura3.rename(columns={'Tipo_Cliente': 'Tipo Cliente'})
+    factura3 = factura3.rename(columns={'Tipo_Factura': 'Tipo Factura'})
+    factura3 = factura3.rename(columns={'NR_FACT': 'Nº Factura'})
+    factura3 = factura3.rename(columns={'DT_PROC': 'Data Processamento'})
+    factura3 = factura3.rename(columns={'DT_FACT': 'Data Facturação'})
+    factura3 = factura3.rename(columns={'VAL_TOT': 'Valor Facturado'})
+    factura3 = factura3.rename(columns={'QTDE': 'Kwh'})
+    factura3 = factura3.rename(columns={'VALOR': 'Valor Cons (ECV)'})    
+    
+    return factura3
+
+#criar dados se para maturidade
+def classificar_maturidade(media):
+    if media == 0:
+        return "0"
+    elif 1 <= media <= 20:
+        return "1 a 20"
+    elif 21 <= media <= 30:
+        return "21 a 30"
+    elif 31 <= media <= 40:
+        return "31 a 40"
+    elif 41 <= media <= 60:
+        return "41 a 60"
+    elif 61 <= media <= 100:
+        return "61 a 100"
+    elif 101 <= media <= 200:
+        return "101 a 200"
+    elif 201 <= media <= 300:
+        return "201 a 300"
+    elif 301 <= media <= 400:
+        return "301 a 400"
+    elif 401 <= media <= 500:
+        return "401 a 500"
+    elif 501 <= media <= 1000:
+        return "501 a 1000"
+    elif 1001 <= media <= 5000:
+        return "1001 a 5000"
+    elif 5001 <= media <= 20000:
+        return "5001 a 20000"
+    elif media > 20000:
+        return "> 20000"
+    else:
+        return "Valor inválido"
+    
 # --- Configuração da página ---
 st.set_page_config(page_title="Facturação", layout="wide")
+
+# --- Menu lateral ---
+with st.sidebar:
+    selected = option_menu(
+        menu_title="Menu Principal",
+        options=["Importação", "Dashboard", "Analise Maturidade"],
+        menu_icon="cast",
+        default_index=0
+    )
+
+# --- Importação ---
+if selected == "Importação":
+    st.header("Importação de Dados de Contagens")
+
+    #query importar facturação
+    query = "SELECT * FROM facturação"
+    upload_file = st.file_uploader("Importar Facturação", type=["txt"])
+    if upload_file:
+        st.markdown("---")
+        content = upload_file.read().decode("utf-8")
+        factura = pd.read_csv(io.StringIO(content), sep='\t', names=colunas)
+        factuc = pd.merge(factura, unidade, on='UC', how='left')
+        prodfact = pd.merge(factuc, produto, on='Prod', how='left')
+        tpfact = pd.merge(prodfact, tp_fact, on='TP_FACT', how='left')
+        tpfact['TP_CLI'] = tpfact['TP_CLI'].astype(str)
+        clifact = pd.merge(tpfact, tip_client, on='TP_CLI', how='left')
+        confact = pd.merge(clifact, tarifa, on='COD_TARIFA', how='left')
+        regfact = pd.merge(confact, regiao, on='Unidade', how='left')
+
+        #organizar estrutura
+        regfact = regfact[['Regiao', 'Unidade', 'CIL', 'CLI_ID', 'CLI_CONTA', 'Tipo_Cliente','Produto', 'Tipo_Factura', 'NR_FACT', 'DT_PROC', 'DT_FACT', 'Tarifa', 
+                            'VAL_TOT', 'CONCEITO', 'QTDE', 'VALOR']]
+        
+        #filtar conceito x30 na tabela
+        regfact = regfact.loc[regfact['CONCEITO'] == 'X30']
+        
+        #função de carregar factura na base de dados    
+        if st.button("Guardar Facturação"):
+            try:
+                with engine.begin() as conn:
+                    regfact.to_sql(
+                        "facturação",
+                        con=conn,
+                        if_exists="append",
+                        index=False,
+                        chunksize=10000  # insere em blocos de 10 mil linhas
+                    )
+                st.success("Dados inseridos com sucesso!")
+            except Exception as e:
+                st.error(f"Erro ao inserir dados: {e}")
 
