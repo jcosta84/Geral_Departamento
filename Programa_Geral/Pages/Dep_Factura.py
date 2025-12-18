@@ -390,7 +390,7 @@ with st.sidebar:
 
 # --- Importação ---
 if selected == "Importação":
-    st.header("Importação de Dados de Contagens")
+    st.header("Importação de Script Facturação")
 
     #query importar facturação
     query = "SELECT * FROM facturação"
