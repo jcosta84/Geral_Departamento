@@ -376,7 +376,17 @@ def classificar_maturidade(media):
         return "> 20000"
     else:
         return "Valor inválido"
+
+#importar contratos
+def importar_contratos():
+    query = "SELECT * FROM contratos"
+    contratos2 = pd.read_sql(query, engine)
+    #converter data
+    contratos2['DT_Contrato'] = pd.to_datetime(contratos2['DT_Contrato'], format='%Y%m%d', errors='coerce').dt.strftime('%d-%m-%Y')
+    contratos2['DT_Inicio'] = pd.to_datetime(contratos2['DT_Inicio'], format='%Y%m%d', errors='coerce').dt.strftime('%d-%m-%Y')
+    contratos2['DT_Baixa'] = pd.to_datetime(contratos2['DT_Baixa'], format='%Y%m%d', errors='coerce').dt.strftime('%d-%m-%Y')
     
+    return contratos2    
 # --- Configuração da página ---
 st.set_page_config(page_title="Facturação", layout="wide")
 
@@ -430,7 +440,7 @@ if selected == "Importação":
             except Exception as e:
                 st.error(f"Erro ao inserir dados: {e}")
 
-#campo de Dashboard
+# --- campo de Dashboard ---
 if selected == "Dashboard":
     st.title("Dashboard")
     facturas_tratadas = tratar_factura()
@@ -664,3 +674,138 @@ if selected == "Dashboard":
         mime='text/csv'
     )
     #st.dataframe(facturas_tratadas, use_container_width=True, hide_index=True)
+
+# --- Analise Maturidade ---
+if selected == "Analise Maturidade":
+    st.title("Análise de Maturidade de Clientes")
+    facturas_tratadas = tratar_factura()
+
+    facturas_maturidade = tratar_factura()
+    contratos_geral = importar_contratos()
+                
+    col1, col2, col3 = st.columns(3)
+
+    #col1
+    with col1:
+        #filtrar região
+        reg = st.multiselect(
+            "Definir Região: ",
+            options=facturas_maturidade['Regiao'].unique(),
+        )
+
+        geral_mat = facturas_maturidade.query(
+            "`Regiao` == @reg"
+        )
+    
+    #col2
+    with col2:
+        #filtar ano
+        an = st.multiselect(
+            "Definir Ano: ",
+            options=geral_mat['Ano'].unique(),
+
+        )
+        geral_mat2 = geral_mat.query(
+            "`Ano` == @an"
+        )
+    
+    tab_di = pd.pivot_table(
+        geral_mat2,
+        index=['CIL', 'Cliente Conta'],
+        columns='Mês',
+        values='Kwh',
+        aggfunc='sum',
+        fill_value=0
+    )
+    #coluna de soma total na tabela dinamica
+    tab_di['Media Consumo Geral'] = tab_di.sum(axis=1)
+    #função se tendo em consideração a coluna de soma total
+    tab_di["Maturidade de consumo"] = tab_di["Media Consumo Geral"].apply(classificar_maturidade)
+    tab_di = tab_di.reset_index()
+    
+    #concatenação cil e conta
+    tab_di['CIL Conta'] = tab_di['CIL'] + ' - ' + tab_di['Cliente Conta']
+    contratos_geral['CIL Conta'] = contratos_geral['CIL'] + ' - ' + contratos_geral['CLI_Conta']
+    contratos_geral = contratos_geral[["CIL Conta", "Regiao","Unidade", "NIP", "Porta", "CGV", 
+                                        "Tipo_Cliente", "Nome", "Morada", "Localidade", "Produto", "Cod_Tarifa", "Seq_Contrato", 
+                                        "Estado_Contrato", "DT_Contrato", "DT_Inicio", "DT_Baixa"]]
+    
+    contdi = pd.merge(tab_di, contratos_geral, on='CIL Conta', how='left')
+    contdi.set_index('CIL Conta', inplace=True)
+
+    #definir botão de download numa coluna
+    col1, col2 = st.columns(2)
+    with col1:
+        #opção de download dos dados em excel
+        @st.cache_data
+        def convert_df(df):
+            #conversão do dado
+            return df.to_csv(sep=';', decimal=',', index=False).encode('utf-8-sig')
+        
+        csv = convert_df(contdi)
+
+        st.download_button(
+            label="Download Facturação",
+            data=csv,
+            file_name='Script Facturação Tratado.csv',
+            mime='text/csv'
+        )
+
+    #tabela dinamica numa coluna
+    left_column, midle_column = st.columns(2)
+    with col1:
+
+        #criação de tabela dinamica para maturidade
+        #quantidade de locais
+        tabdicont = pd.pivot_table(
+            contdi,
+            index=['Maturidade de consumo'],
+            values='CIL',
+            aggfunc='count',
+            fill_value=0
+        )
+
+        #valor total consumido
+        tabdicont2 = pd.pivot_table(
+            contdi,
+            index=['Maturidade de consumo'],
+            values='Media Consumo Geral',
+            aggfunc='sum',
+            fill_value=0
+        )
+        #merge duas tabelas de forma apresentar as informações de quantidade de consumo
+        tb_ge = pd.merge(tabdicont, tabdicont2, on='Maturidade de consumo', how='left')
+        #apresentar as duas tabelas
+        st.dataframe(tb_ge)
+    
+    with col2:
+        #definir filro para as maturidades
+        #filtrar região
+        matu = st.multiselect(
+            "Definir Maturidade: ",
+            options=contdi['Maturidade de consumo'].unique(),
+        )
+
+        geral_mat = contdi.query(
+            "`Maturidade de consumo` == @matu"
+        )
+        geral_mat.set_index('CIL', inplace=True)
+                
+    #tabela filtrada            
+    st.dataframe(geral_mat)
+
+    #opção de download dos dados em excel
+    @st.cache_data
+    def convert_df(df):
+        #conversão do dado
+        return df.to_csv(sep=';', decimal=',', index=False).encode('utf-8-sig')
+    
+    csv = convert_df(geral_mat)
+
+    st.download_button(
+        label="Download Analise Maturidade",
+        data=csv,
+        file_name='Script Facturação Por Maturidade.csv',
+        mime='text/csv'
+    )
+
