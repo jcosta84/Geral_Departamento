@@ -306,7 +306,7 @@ colunas2 = [
 
 #definir importação e tratamento do script facturação
 def tratar_factura():
-    query = "SELECT * FROM facturação"
+    query = "SELECT * FROM facturacao"
     factura2 = pd.read_sql(query, engine)
     #filtrar consumo
     factura2 = factura2.loc[factura2['CONCEITO'] == 'X30']
@@ -394,7 +394,7 @@ if selected == "Importação":
     st.header("Importação de Dados de Contagens")
 
     #query importar facturação
-    query = "SELECT * FROM facturação"
+    query = "SELECT * FROM facturacao"
     upload_file = st.file_uploader("Importar Facturação", type=["txt"])
     if upload_file:
         st.markdown("---")
@@ -420,7 +420,7 @@ if selected == "Importação":
             try:
                 with engine.begin() as conn:
                     regfact.to_sql(
-                        "facturação",
+                        "facturacao",
                         con=conn,
                         if_exists="append",
                         index=False,
