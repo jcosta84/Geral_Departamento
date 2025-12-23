@@ -8,6 +8,7 @@ from streamlit_option_menu import option_menu
 from database.db import engine  # Usar engine, não SessionLocal
 import re
 import io
+import plotly.express as px
 
 #def app():
     
@@ -305,7 +306,7 @@ colunas2 = [
 
 #definir importação e tratamento do script facturação
 def tratar_factura():
-    query = "SELECT * FROM facturação"
+    query = "SELECT * FROM facturacao"
     factura2 = pd.read_sql(query, engine)
     #filtrar consumo
     factura2 = factura2.loc[factura2['CONCEITO'] == 'X30']
@@ -393,7 +394,7 @@ if selected == "Importação":
     st.header("Importação de Script Facturação")
 
     #query importar facturação
-    query = "SELECT * FROM facturação"
+    query = "SELECT * FROM facturacao"
     upload_file = st.file_uploader("Importar Facturação", type=["txt"])
     if upload_file:
         st.markdown("---")
@@ -419,7 +420,7 @@ if selected == "Importação":
             try:
                 with engine.begin() as conn:
                     regfact.to_sql(
-                        "facturação",
+                        "facturacao",
                         con=conn,
                         if_exists="append",
                         index=False,
@@ -429,3 +430,237 @@ if selected == "Importação":
             except Exception as e:
                 st.error(f"Erro ao inserir dados: {e}")
 
+#campo de Dashboard
+if selected == "Dashboard":
+    st.title("Dashboard")
+    facturas_tratadas = tratar_factura()
+
+    #dividir em colunas
+    col1, col2, col3 = st.columns(3)
+
+    #col1
+    with col1:
+        #filtrar região
+        reg = st.multiselect(
+            "Definir Região: ",
+            options=facturas_tratadas['Regiao'].unique(),
+        )
+
+        geral_selection = facturas_tratadas.query(
+            "`Regiao` == @reg"
+        )
+    
+    #col2
+    with col2:
+        #filtar ano
+        an = st.multiselect(
+            "Definir Ano: ",
+            options=geral_selection['Ano'].unique(),
+
+        )
+        geral_selection2 = geral_selection.query(
+            "`Ano` == @an"
+        )
+
+    #col3
+    with col3:
+        #filtrar mês
+        me = st.multiselect(
+            "Definir Mês",
+            options=geral_selection2['Mês'].unique(),
+
+        )
+        geral_selection3 = geral_selection2.query(
+            "`Mês` == @me"
+        )
+    
+    #criação de tabela dinamica por unidade
+    tabdinamica = geral_selection3.pivot_table(
+        index=['Unidade'],
+        values=['Valor Facturado', 'Kwh'],
+        aggfunc='sum',
+        fill_value=0
+    )
+                
+    #criação de tabela dinamica por Tipo Cliente
+    tabdinamica2 = geral_selection3.pivot_table(
+        index=['Tipo Cliente'],
+        values=['Valor Facturado', 'Kwh'],
+        aggfunc='sum',
+        fill_value=0
+    )
+
+        #criação de tabela dinamica por Produto
+    tabdinamica3 = geral_selection3.pivot_table(
+        index=['Produto'],
+        values=['Valor Facturado', 'Kwh'],
+        aggfunc='sum',
+        fill_value=0
+    )
+
+    #criação de graficos por Unidade coemrcial
+    #grafico UC Facturado
+    fig_ucval = px.bar(
+        tabdinamica,
+        x=tabdinamica.index,
+        y=['Valor Facturado'],
+        orientation="v",
+        title="<b>Grafico Valor Facturado Por Unidade</b>",
+        color_discrete_sequence=["#5F9EA0"],
+        template="plotly_white",
+    )
+    fig_ucval.update_layout(
+        plot_bgcolor="rgba(0,0,0,0)",
+        xaxis=(dict(showgrid=False))
+
+    )
+
+    #grafico UC Kwh
+    fig_ucquant = px.bar(
+        tabdinamica,
+        x=tabdinamica.index,
+        y=['Kwh'],
+        orientation="v",
+        title="<b>Grafico Consumo Por Unidade</b>",
+        color_discrete_sequence=["#B22222"],                
+        template="plotly_white",
+    )
+    fig_ucquant.update_layout(
+        plot_bgcolor="rgba(0,0,0,0)",
+        xaxis=(dict(showgrid=False))
+    )
+
+
+    #criação de graficos por Tipo Cliente
+    #grafico tipo cliente Facturado
+    fig_tipval = px.bar(
+        tabdinamica2,
+        x=tabdinamica2.index,
+        y=['Valor Facturado'],
+        orientation="v",
+        title="<b>Grafico Valor Facturado Tipo Cliente</b>",
+        color_discrete_sequence=["#5F9EA0"],
+        template="plotly_white",
+    )
+    fig_tipval.update_layout(
+        plot_bgcolor="rgba(0,0,0,0)",
+        xaxis=(dict(showgrid=False))
+
+    )
+
+    #grafico tipo cliente Kwh
+    fig_tipquant = px.bar(
+        tabdinamica2,
+        x=tabdinamica2.index,
+        y=['Kwh'],
+        orientation="v",
+        title="<b>Grafico Consumo Tipo Cliente</b>",
+        color_discrete_sequence=["#B22222"],                
+        template="plotly_white",
+    )
+    fig_tipquant.update_layout(
+        plot_bgcolor="rgba(0,0,0,0)",
+        xaxis=(dict(showgrid=False))
+    )
+
+    #criação de graficos por Produto
+    #grafico produto Facturado
+    fig_proval = px.bar(
+        tabdinamica3,
+        x=tabdinamica3.index,
+        y=['Valor Facturado'],
+        orientation="v",
+        title="<b>Grafico Valor Facturado Produto</b>",
+        color_discrete_sequence=["#5F9EA0"],
+        template="plotly_white",
+    )
+    fig_proval.update_layout(
+        plot_bgcolor="rgba(0,0,0,0)",
+        xaxis=(dict(showgrid=False))
+
+    )
+
+    #grafico tipo cliente Kwh
+    fig_proquant = px.bar(
+        tabdinamica3,
+        x=tabdinamica3.index,
+        y=['Kwh'],
+        orientation="v",
+        title="<b>Grafico Consumo Produto</b>",
+        color_discrete_sequence=["#B22222"],                
+        template="plotly_white",
+    )
+    fig_proquant.update_layout(
+        plot_bgcolor="rgba(0,0,0,0)",
+        xaxis=(dict(showgrid=False))
+    )
+    
+    #apresentar tabela dinamica na frame
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.header("Facturação Por Unidade")
+        st.dataframe(tabdinamica, column_config={"Unidade": st.column_config.TextColumn("Unidade", width="medium"),
+                                                    "Kwh": st.column_config.NumberColumn("Kwh", width="small"),
+                                                    "Valor Facturado": st.column_config.NumberColumn("Valor Facturado", width="medium")})
+    
+    with col2:
+        st.header("Facturação Por Tipo Cliente")
+        st.dataframe(tabdinamica2, column_config={"Tipo Cliente": st.column_config.TextColumn("Tipo Cliente", width="medium"),
+                                                    "Kwh": st.column_config.NumberColumn("Kwh", width="small"),
+                                                    "Valor Facturado": st.column_config.NumberColumn("Valor Facturado", width="medium")})
+    
+    with col3:
+        st.header("Facturação Por Produto")
+        st.dataframe(tabdinamica3, column_config={"Produto": st.column_config.TextColumn("Produto", width="medium"),
+                                                        "Kwh": st.column_config.NumberColumn("Kwh", width="small"),
+                                                    "Valor Facturado": st.column_config.NumberColumn("Valor Facturado", width="medium")})
+    
+        #graficos po unidade comercial
+    st.header("Grafico Unidade Comercial")
+
+    #apresentar os graficos em colunas
+    left_column, right_column = st.columns(2)
+    left_column.plotly_chart(fig_ucval, use_container_width=True)
+    right_column.plotly_chart(fig_ucquant, use_container_width=True)
+
+    st.markdown("---")
+    #graficos por tipo cliente
+    st.header("Grafico Tipo de Cliente")
+
+    #apresentar os graficos em colunas
+    left_column, right_column = st.columns(2)
+    left_column.plotly_chart(fig_tipval, use_container_width=True)
+    right_column.plotly_chart(fig_tipquant, use_container_width=True)
+
+    st.markdown("---")
+    #graficos por Produto
+    st.header("Grafico Produto")
+
+    #apresentar os graficos em colunas
+    left_column, right_column = st.columns(2)
+    left_column.plotly_chart(fig_proval, use_container_width=True)
+    right_column.plotly_chart(fig_proquant, use_container_width=True)
+
+    st.markdown("---")
+    st.header("Quadro Facturação")
+    #organizar
+    geral_selection3 = geral_selection3[['Unidade', 'CIL', 'Cliente', 'Cliente Conta', 'Tipo Cliente','Produto', 'Tipo Factura', 'Nº Factura', 
+                                            'Data Processamento', 'Data Facturação', 'Tarifa', 'Valor Facturado', 'CONCEITO', 'Kwh', 'Valor Cons (ECV)']]
+                
+    st.dataframe(geral_selection3, use_container_width=True, hide_index=True)
+
+    #opção de download dos dados em excel
+    @st.cache_data
+    def convert_df(df):
+        #conversão do dado
+        return df.to_csv(sep=';', decimal=',', index=False).encode('utf-8-sig')
+    
+    csv = convert_df(geral_selection3)
+
+    st.download_button(
+        label="Download Facturação",
+        data=csv,
+        file_name='Script Facturação Tratado.csv',
+        mime='text/csv'
+    )
+    #st.dataframe(facturas_tratadas, use_container_width=True, hide_index=True)
