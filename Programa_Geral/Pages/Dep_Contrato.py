@@ -52,6 +52,22 @@ def app():
         for chave in chaves:
             st.session_state.pop(chave, None)
 
+    # -----------------------------   
+    def idx(lista, valor, default=0):
+        """Devolve o index do valor na lista; se não existir, devolve default."""
+        try:
+            return lista.index(valor)
+        except Exception:
+            return default
+
+    # =============================
+    # Listas para selectbox (as mesmas que usas no cadastro)
+    servicos = ["Pós-Pago", "Pré-Pago"]
+    potencias = ["1100 Kva", "2200 Kva", "3300 Kva", "6600 Kva", "9900 Kva", "13200 Kva", "16500 Kva", "19800 Kva"]
+    tipos = ["Monofásica", "Bifásica", "Trifásica"]
+    formatos = ["Normal", "Remota"]
+    estilos = ["Normal", "Bidirecional"]
+    clientes = ["Normal", "Micro Produtor"]
     # -----------------------------
     # Configuração da página
     # -----------------------------
@@ -240,6 +256,137 @@ def app():
 
         try:
             df = pd.read_sql("SELECT * FROM processos ORDER BY id DESC", engine)
-            st.dataframe(df, use_container_width=True)
+
+            if df.empty:
+                st.warning("Não existem processos cadastrados.")
+                st.stop()
+
+            # --------- manter valores no session_state ---------
+            if "pesquisa_proc" not in st.session_state:
+                st.session_state["pesquisa_proc"] = ""
+            if "id_sel_proc" not in st.session_state:
+                st.session_state["id_sel_proc"] = None
+
+            # ✅ campo fica sempre e mantém o que foi digitado
+            pesquisa = st.text_input(
+                "Pesquisar por ID, CNI ou Nome",
+                placeholder="Digite o ID, CNI ou Nome do cliente",
+                key="pesquisa_proc"
+            )
+
+            # --------- FILTRO DINÂMICO ---------
+            if pesquisa:
+                seleid = df[
+                    df["id"].astype(str).str.contains(pesquisa, case=False, na=False)
+                    | df["cni"].astype(str).str.contains(pesquisa, case=False, na=False)
+                    | df["nome"].astype(str).str.contains(pesquisa, case=False, na=False)
+                ].copy()
+            else:
+                seleid = df.copy()
+
+            if seleid.empty:
+                st.warning("Nenhum processo encontrado.")
+                st.stop()
+
+            # --------- label do selectbox ---------
+            seleid["label"] = (
+                "ID: " + seleid["id"].astype(str)
+                + " | " + seleid["nome"].fillna("").astype(str)
+                + " | CNI: " + seleid["cni"].fillna("").astype(str)
+            )
+
+            labels = seleid["label"].tolist()
+
+            # ✅ manter a seleção anterior se ainda existir no filtro
+            if st.session_state["id_sel_proc"] is not None:
+                mask = seleid["id"] == st.session_state["id_sel_proc"]
+                if mask.any():
+                    id_atual = int(st.session_state["id_sel_proc"])
+                    label_atual = seleid.loc[seleid["id"] == id_atual, "label"].iloc[0]
+                    index_atual = labels.index(label_atual)
+                else:
+                    index_atual = 0
+            else:
+                index_atual = 0
+
+            escolha = st.selectbox(
+                "Escolha o processo",
+                labels,
+                index=index_atual
+            )
+
+            # guardar id selecionado
+            id_sel = int(escolha.split("|")[0].replace("ID:", "").strip())
+            st.session_state["id_sel_proc"] = id_sel
+
+            # pegar a linha selecionada
+            row = seleid.loc[seleid["id"] == id_sel].iloc[0]
+
+            def idx(lista, valor, default=0):
+                try:
+                    return lista.index(valor)
+                except Exception:
+                    return default
+
+            # --------- FORM (consulta) ---------
+            with st.form("form_completo_consulta"):
+
+                with st.expander("Parte 1 – Dados do Cliente", expanded=True):
+                    st.text_input("Nome", value=str(row.get("nome", "") or ""), disabled=True)
+                    st.text_input("Unidade", value=str(row.get("unidade", "") or ""), disabled=True)
+                    st.text_input("Localidade", value=str(row.get("localidade", "") or ""), disabled=True)
+                    st.text_input("Morada", value=str(row.get("morada", "") or ""), disabled=True)
+                    st.text_input("CNI", value=str(row.get("cni", "") or ""), disabled=True)
+
+                    st.number_input("NIF", value=int(row.get("nif", 0) or 0), min_value=0, step=1, format="%d", disabled=True)
+                    st.number_input("Móvel", value=int(row.get("movel", 0) or 0), min_value=0, step=1, format="%d", disabled=True)
+                    st.number_input("Telefone", value=int(row.get("telefone", 0) or 0), min_value=0, step=1, format="%d", disabled=True)
+
+                    st.text_input("Email", value=str(row.get("email", "") or ""), disabled=True)
+                    st.date_input("Data de Entrada", value=row.get("data_entrada"), disabled=True)
+                    st.text_input("Loja de Entrada", value=str(row.get("loja_entrada", "") or ""), disabled=True)
+
+                with st.expander("Parte 2 – Tipo de Ligação", expanded=False):
+                    st.selectbox("Serviço", servicos, index=idx(servicos, row.get("servico")), disabled=True)
+                    st.selectbox("Potência", potencias, index=idx(potencias, row.get("potencia")), disabled=True)
+                    st.selectbox("Tipo de Ligação", tipos, index=idx(tipos, row.get("tipo_ligacao")), disabled=True)
+                    st.selectbox("Formato do Contador", formatos, index=idx(formatos, row.get("formato_medidor")), disabled=True)
+                    st.selectbox("Contador", estilos, index=idx(estilos, row.get("estilo_contador")), disabled=True)
+                    st.selectbox("Cliente", clientes, index=idx(clientes, row.get("cliente_tipo")), disabled=True)
+
+                with st.expander("Parte 3 – Indicação de Local", expanded=False):
+                    st.text_input("Localização", value=str(row.get("localizacao", "") or ""), disabled=True)
+                    st.text_input("Referência", value=str(row.get("referencia", "") or ""), disabled=True)
+
+                    lat = float(row.get("latitude", 0.0) or 0.0)
+                    lon = float(row.get("longitude", 0.0) or 0.0)
+
+                    st.number_input("Latitude", value=lat, min_value=-90.0, max_value=90.0, format="%.6f", disabled=True)
+                    st.number_input("Longitude", value=lon, min_value=-180.0, max_value=180.0, format="%.6f", disabled=True)
+
+                    st.divider()
+                    if lat != 0.0 or lon != 0.0:
+                        st.map(pd.DataFrame({"lat": [lat], "lon": [lon]}), zoom=14)
+
+                with st.expander("📄 Documento (PDF)", expanded=False):
+                    pdf_bytes = row.get("pdf_bytes")
+                    pdf_nome = row.get("pdf_nome", "documento.pdf")
+                    pdf_mime = row.get("pdf_mime", "application/pdf")
+
+                    if pdf_bytes:
+                        st.download_button("⬇️ Baixar PDF", data=pdf_bytes, file_name=pdf_nome, mime=pdf_mime)
+                        mostrar_pdf(pdf_bytes)
+                    else:
+                        st.info("Este processo não possui PDF.")
+
+                c1, c2 = st.columns(2)
+                fechar = c1.form_submit_button("✅ Fechar")
+                editar = c2.form_submit_button("✏️ Editar")
+
+            if fechar:
+                st.info("Fechado.")
+            if editar:
+                st.info("Modo edição.")
+
         except Exception as e:
             st.error(f"Erro ao consultar processos: {e}")
