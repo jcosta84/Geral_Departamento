@@ -425,12 +425,12 @@ class FacturaFrame(ctk.CTkFrame):
             )
             self.save_button.pack(pady=10)
 
-            self.load_button = ctk.CTkButton(
-                frame_import,
-                text="Carregar Dados do Banco",
-                command=self.carregar_dados_do_banco
-            )
-            self.load_button.pack(pady=10)
+            #self.load_button = ctk.CTkButton(
+                #frame_import,
+                #text="Carregar Dados do Banco",
+                #command=self.carregar_dados_do_banco
+            #)
+            #self.load_button.pack(pady=10)
 
         elif selecao == "Dashboard":
             if self.df_processado is None:
