@@ -3,7 +3,8 @@ from tkinter import filedialog, messagebox
 import pandas as pd
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, declarative_base
-import json, os
+import json
+import os
 from urllib.parse import quote_plus
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
@@ -60,6 +61,7 @@ class LoginApp(ctk.CTk):
         user = self.username.get()
         pwd = self.password.get()
         query = text("SELECT nivel FROM usuarios WHERE username = :user AND password = :pwd")
+
         with engine.connect() as conn:
             result = conn.execute(query, {"user": user, "pwd": pwd}).fetchone()
 
@@ -80,7 +82,6 @@ class MainApp(ctk.CTk):
         self.title(f"Menu Principal - {user}")
         self.user = user
         self.nivel = nivel
-        self.frames = {}
 
         self.carregar_tabelas_auxiliares()
         self.build_ui()
@@ -153,7 +154,7 @@ class MainApp(ctk.CTk):
         self.regiao = pd.DataFrame(dados_regiao, columns=['Unidade', 'Regiao']).set_index('Unidade')
 
     def build_ui(self):
-        self.menu_frame = ctk.CTkFrame(self, width=250, corner_radius=0)
+        self.menu_frame = ctk.CTkFrame(self, width=280, corner_radius=0)
         self.menu_frame.pack(side="left", fill="y")
         self.menu_frame.pack_propagate(False)
 
@@ -164,10 +165,13 @@ class MainApp(ctk.CTk):
             self.menu_frame,
             text=f"Menu Principal - {self.user}",
             font=("Arial", 16, "bold")
-        ).pack(pady=(10, 20), padx=10)
+        ).pack(pady=(12, 20), padx=10)
 
-        self.submenu_frames = {}
         self.menu_buttons = {}
+        self.submenu_frames = {}
+        self.menu_containers = {}
+        self.submenu_buttons = {}
+        self.submenu_map = {}
 
         estrutura_menu = {
             "Home": [
@@ -206,36 +210,45 @@ class MainApp(ctk.CTk):
         self.abrir_submenu("home")
 
     def criar_menu_expansivel(self, titulo, submenus):
+        container = ctk.CTkFrame(self.menu_frame, fg_color="transparent")
+        container.pack(fill="x", padx=10, pady=(2, 2))
+
+        self.menu_containers[titulo] = container
+
         btn_menu = ctk.CTkButton(
-            self.menu_frame,
+            container,
             text=f"▶ {titulo}",
             height=40,
             anchor="w",
-            fg_color="#1f6aa5",
-            hover_color="#144870",
+            fg_color="#2b6da8",
+            hover_color="#1f5d92",
+            text_color="white",
             corner_radius=6,
             command=lambda t=titulo: self.toggle_submenu(t)
         )
-        btn_menu.pack(fill="x", padx=10, pady=(2, 2))
+        btn_menu.pack(fill="x")
 
         self.menu_buttons[titulo] = btn_menu
 
-        submenu_frame = ctk.CTkFrame(self.menu_frame, fg_color="transparent")
+        submenu_frame = ctk.CTkFrame(container, fg_color="transparent")
         self.submenu_frames[titulo] = submenu_frame
 
         for nome_submenu, chave_submenu in submenus:
             btn_sub = ctk.CTkButton(
                 submenu_frame,
                 text=f"   {nome_submenu}",
-                height=30,
+                height=28,
                 anchor="w",
                 fg_color="transparent",
-                hover_color="#3a3a3a",
+                hover_color="#404040",
                 text_color="white",
                 corner_radius=4,
-                command=lambda c=chave_submenu: self.abrir_submenu(c)
+                command=lambda c=chave_submenu, p=titulo: self.abrir_submenu(c, p)
             )
-            btn_sub.pack(fill="x", padx=25, pady=2)
+            btn_sub.pack(fill="x", padx=(18, 0), pady=1)
+
+            self.submenu_buttons[chave_submenu] = btn_sub
+            self.submenu_map[chave_submenu] = titulo
 
     def toggle_submenu(self, titulo):
         frame = self.submenu_frames[titulo]
@@ -245,12 +258,42 @@ class MainApp(ctk.CTk):
             frame.pack_forget()
             botao.configure(text=f"▶ {titulo}")
         else:
-            frame.pack(fill="x", padx=5, pady=(0, 5))
+            frame.pack(fill="x", pady=(2, 0))
             botao.configure(text=f"▼ {titulo}")
 
-    def abrir_submenu(self, chave):
+    def expandir_menu_pai(self, titulo):
+        frame = self.submenu_frames[titulo]
+        botao = self.menu_buttons[titulo]
+
+        if not frame.winfo_ismapped():
+            frame.pack(fill="x", pady=(2, 0))
+            botao.configure(text=f"▼ {titulo}")
+
+    def destacar_submenu_ativo(self, chave_ativa):
+        for chave, btn in self.submenu_buttons.items():
+            if chave == chave_ativa:
+                btn.configure(
+                    fg_color="#1f6aa5",
+                    hover_color="#1f6aa5",
+                    text_color="white"
+                )
+            else:
+                btn.configure(
+                    fg_color="transparent",
+                    hover_color="#404040",
+                    text_color="white"
+                )
+
+    def abrir_submenu(self, chave, menu_pai=None):
         for frame in self.content_frame.winfo_children():
             frame.destroy()
+
+        if menu_pai:
+            self.expandir_menu_pai(menu_pai)
+        elif chave in self.submenu_map:
+            self.expandir_menu_pai(self.submenu_map[chave])
+
+        self.destacar_submenu_ativo(chave)
 
         if chave == "home":
             frame = HomeFrame(self.content_frame)
