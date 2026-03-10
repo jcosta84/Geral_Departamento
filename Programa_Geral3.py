@@ -8,6 +8,7 @@ import os
 from urllib.parse import quote_plus
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
+import textwrap
 
 
 # -------------------- CONFIG DB -------------------
@@ -453,7 +454,7 @@ class FacturaFrame(ctk.CTkFrame):
             dados = self.df_processado.copy()
             dados["DT_FACT"] = pd.to_datetime(dados["DT_FACT"], errors="coerce")
             dados["Ano"] = dados["DT_FACT"].dt.year
-            dados["Mês"] = dados["DT_FACT"].dt.month
+            dados["Mês"] = dados["DT_FACT"].dt.month_name(locale="pt_PT")
 
             filtro_frame = ctk.CTkFrame(self.secao_frame)
             filtro_frame.pack(pady=10, padx=10, fill="x")
@@ -464,7 +465,7 @@ class FacturaFrame(ctk.CTkFrame):
 
             lista_regiao = [""] + sorted(dados["Regiao"].dropna().astype(str).unique().tolist())
             lista_ano = [""] + sorted(dados["Ano"].dropna().astype(int).astype(str).unique().tolist())
-            lista_mes = [""] + sorted(dados["Mês"].dropna().astype(int).astype(str).unique().tolist())
+            lista_mes = [""] + sorted(dados["Mês"].dropna().unique().tolist())
 
             ctk.CTkLabel(filtro_frame, text="Região:").grid(row=0, column=0, padx=5, pady=8)
             regiao_box = ctk.CTkComboBox(filtro_frame, variable=self.regiao_var, values=lista_regiao, width=160)
@@ -489,7 +490,7 @@ class FacturaFrame(ctk.CTkFrame):
                 if self.ano_var.get():
                     filtrado = filtrado[filtrado["Ano"] == int(self.ano_var.get())]
                 if self.mes_var.get():
-                    filtrado = filtrado[filtrado["Mês"] == int(self.mes_var.get())]
+                    filtrado = filtrado[filtrado["Mês"] == self.mes_var.get()]
 
                 if filtrado.empty:
                     messagebox.showwarning("Nenhum dado", "Nenhum dado disponível para os filtros selecionados.")
@@ -508,38 +509,56 @@ class FacturaFrame(ctk.CTkFrame):
                     index="Produto", values=["VAL_TOT", "QTDE"], aggfunc="sum", fill_value=0
                 )
 
-                fig1 = Figure(figsize=(4, 3), dpi=100)
+                fig1 = Figure(figsize=(2.4, 2.8), dpi=80)
                 ax1 = fig1.add_subplot(111)
+
                 tab_unidade["VAL_TOT"].plot(kind="bar", ax=ax1)
-                ax1.set_title("Facturação por Unidade")
-                ax1.set_ylabel("Valor Total")
-                ax1.tick_params(axis='x', rotation=45)
+
+                ax1.set_title("Facturação por Unidade", fontsize=9)
+                ax1.set_ylabel("Valor Total", fontsize=8)
+                ax1.tick_params(axis='x', rotation=45, labelsize=7)
+
+                fig1.tight_layout()
 
                 canvas1 = FigureCanvasTkAgg(fig1, master=chart_frame)
                 canvas1.draw()
-                canvas1.get_tk_widget().pack(side="left", expand=True, fill="both", padx=5, pady=5)
 
-                fig2 = Figure(figsize=(4, 3), dpi=100)
+                canvas1.get_tk_widget().grid(row=0, column=0, padx=10, pady=10, sticky="n")
+                #canvas1.get_tk_widget().pack(side="left", fill="both", padx=5, pady=5)
+
+                fig2 = Figure(figsize=(2.4, 2.8), dpi=80)
                 ax2 = fig2.add_subplot(111)
+
                 tab_cliente["VAL_TOT"].plot(kind="bar", ax=ax2)
-                ax2.set_title("Facturação por Tipo Cliente")
-                ax2.set_ylabel("Valor Total")
-                ax2.tick_params(axis='x', rotation=45)
+
+                ax2.set_title("Facturação por Tipo Cliente", fontsize=9)
+                ax2.set_ylabel("Valor Total", fontsize=8)
+                ax2.tick_params(axis='x', rotation=45, labelsize=7)
+
+                fig2.tight_layout()
 
                 canvas2 = FigureCanvasTkAgg(fig2, master=chart_frame)
                 canvas2.draw()
-                canvas2.get_tk_widget().pack(side="left", expand=True, fill="both", padx=5, pady=5)
 
-                fig3 = Figure(figsize=(4, 3), dpi=100)
+                canvas2.get_tk_widget().grid(row=0, column=1, padx=10, pady=10, sticky="n")
+                #canvas2.get_tk_widget().pack(side="left", fill="both", padx=5, pady=5)
+
+                fig3 = Figure(figsize=(2.4, 2.8), dpi=80)
                 ax3 = fig3.add_subplot(111)
+
                 tab_produto["VAL_TOT"].plot(kind="bar", ax=ax3)
-                ax3.set_title("Facturação por Produto")
-                ax3.set_ylabel("Valor Total")
-                ax3.tick_params(axis='x', rotation=45)
+
+                ax3.set_title("Facturação por Produto", fontsize=9)
+                ax3.set_ylabel("Valor Total", fontsize=8)
+                ax3.tick_params(axis='x', rotation=45, labelsize=7)
+
+                fig3.tight_layout()
 
                 canvas3 = FigureCanvasTkAgg(fig3, master=chart_frame)
                 canvas3.draw()
-                canvas3.get_tk_widget().pack(side="left", expand=True, fill="both", padx=5, pady=5)
+
+                canvas3.get_tk_widget().grid(row=1, column=0, padx=10, pady=10, sticky="n")
+                #canvas3.get_tk_widget().pack(side="left", fill="both", padx=5, pady=5)
 
             btn_aplicar = ctk.CTkButton(
                 filtro_frame,
