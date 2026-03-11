@@ -1,4 +1,7 @@
+from tkinter import ttk
+from tkinter import ttk, messagebox
 import customtkinter as ctk
+import tkinter as tk
 from tkinter import filedialog, messagebox
 import pandas as pd
 from sqlalchemy import create_engine, text
@@ -487,79 +490,292 @@ class FacturaFrame(ctk.CTkFrame):
 
                 if self.regiao_var.get():
                     filtrado = filtrado[filtrado["Regiao"] == self.regiao_var.get()]
+
                 if self.ano_var.get():
                     filtrado = filtrado[filtrado["Ano"] == int(self.ano_var.get())]
+
                 if self.mes_var.get():
                     filtrado = filtrado[filtrado["Mês"] == self.mes_var.get()]
 
                 if filtrado.empty:
-                    messagebox.showwarning("Nenhum dado", "Nenhum dado disponível para os filtros selecionados.")
+                    messagebox.showwarning(
+                        "Nenhum dado",
+                        "Nenhum dado disponível para os filtros selecionados."
+                    )
                     return
 
+                # limpar conteúdo anterior
                 for widget in chart_frame.winfo_children():
                     widget.destroy()
 
+                # =========================
+                # TABELAS RESUMO
+                # =========================
                 tab_unidade = filtrado.pivot_table(
-                    index="Unidade", values=["VAL_TOT", "QTDE"], aggfunc="sum", fill_value=0
-                )
+                    index="Unidade",
+                    values=["VAL_TOT", "QTDE"],
+                    aggfunc="sum",
+                    fill_value=0
+                ).reset_index()
+
                 tab_cliente = filtrado.pivot_table(
-                    index="Tipo_Cliente", values=["VAL_TOT", "QTDE"], aggfunc="sum", fill_value=0
-                )
+                    index="Tipo_Cliente",
+                    values=["VAL_TOT", "QTDE"],
+                    aggfunc="sum",
+                    fill_value=0
+                ).reset_index()
+
                 tab_produto = filtrado.pivot_table(
-                    index="Produto", values=["VAL_TOT", "QTDE"], aggfunc="sum", fill_value=0
+                    index="Produto",
+                    values=["VAL_TOT", "QTDE"],
+                    aggfunc="sum",
+                    fill_value=0
+                ).reset_index()
+
+                # =========================
+                # ESTILO TREEVIEW
+                # =========================
+                style = ttk.Style()
+                style.theme_use("default")
+
+                style.configure(
+                    "Treeview",
+                    background="white",
+                    foreground="black",
+                    rowheight=26,
+                    fieldbackground="white",
+                    font=("Arial", 10)
                 )
 
-                fig1 = Figure(figsize=(2.4, 2.8), dpi=80)
-                ax1 = fig1.add_subplot(111)
+                style.configure(
+                    "Treeview.Heading",
+                    font=("Arial", 10, "bold"),
+                    background="#D9D9D9",
+                    foreground="black"
+                )
 
-                tab_unidade["VAL_TOT"].plot(kind="bar", ax=ax1)
+                style.map(
+                    "Treeview",
+                    background=[("selected", "#347083")],
+                    foreground=[("selected", "white")]
+                )
 
-                ax1.set_title("Facturação por Unidade", fontsize=9)
-                ax1.set_ylabel("Valor Total", fontsize=8)
-                ax1.tick_params(axis='x', rotation=45, labelsize=7)
+                # =========================
+                # FUNÇÕES DE FORMATAÇÃO
+                # =========================
+                def formatar_valor_moeda(valor):
+                    return f"{float(valor):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + " CVE"
 
-                fig1.tight_layout()
+                def formatar_quantidade(valor):
+                    return f"{int(valor):,}".replace(",", ".")
 
-                canvas1 = FigureCanvasTkAgg(fig1, master=chart_frame)
-                canvas1.draw()
+                # =========================
+                # LAYOUT PRINCIPAL
+                # =========================
+                area_superior = ctk.CTkFrame(chart_frame, fg_color="transparent")
+                area_superior.pack(fill="x", expand=False, padx=5, pady=(5, 8))
 
-                canvas1.get_tk_widget().grid(row=0, column=0, padx=10, pady=10, sticky="n")
-                #canvas1.get_tk_widget().pack(side="left", fill="both", padx=5, pady=5)
+                area_inferior = ctk.CTkFrame(chart_frame, fg_color="transparent")
+                area_inferior.pack(fill="both", expand=True, padx=5, pady=(0, 5))
 
-                fig2 = Figure(figsize=(2.4, 2.8), dpi=80)
-                ax2 = fig2.add_subplot(111)
+                area_superior.grid_columnconfigure(0, weight=1)
+                area_superior.grid_columnconfigure(1, weight=1)
+                area_superior.grid_columnconfigure(2, weight=1)
 
-                tab_cliente["VAL_TOT"].plot(kind="bar", ax=ax2)
+                area_inferior.grid_columnconfigure(0, weight=1)
+                area_inferior.grid_columnconfigure(1, weight=1)
+                area_inferior.grid_columnconfigure(2, weight=1)
+                area_inferior.grid_rowconfigure(0, weight=1)
 
-                ax2.set_title("Facturação por Tipo Cliente", fontsize=9)
-                ax2.set_ylabel("Valor Total", fontsize=8)
-                ax2.tick_params(axis='x', rotation=45, labelsize=7)
+                # =========================
+                # TREEVIEW
+                # =========================
+                def criar_treeview(frame_pai, linha, coluna, titulo_bloco, dataframe, campos, titulos):
+                    bloco = ctk.CTkFrame(frame_pai, corner_radius=8)
+                    bloco.grid(row=linha, column=coluna, sticky="nsew", padx=8, pady=8)
 
-                fig2.tight_layout()
+                    lbl_titulo = ctk.CTkLabel(
+                        bloco,
+                        text=titulo_bloco,
+                        font=("Arial", 16, "bold")
+                    )
+                    lbl_titulo.pack(pady=(8, 5))
 
-                canvas2 = FigureCanvasTkAgg(fig2, master=chart_frame)
-                canvas2.draw()
+                    tabela_frame = tk.Frame(bloco, bg="white")
+                    tabela_frame.pack(fill="both", expand=True, padx=8, pady=8)
 
-                canvas2.get_tk_widget().grid(row=0, column=1, padx=10, pady=10, sticky="n")
-                #canvas2.get_tk_widget().pack(side="left", fill="both", padx=5, pady=5)
+                    tree = ttk.Treeview(
+                        tabela_frame,
+                        columns=campos,
+                        show="headings",
+                        height=10
+                    )
 
-                fig3 = Figure(figsize=(2.4, 2.8), dpi=80)
-                ax3 = fig3.add_subplot(111)
+                    scroll_y = ttk.Scrollbar(
+                        tabela_frame,
+                        orient="vertical",
+                        command=tree.yview
+                    )
+                    scroll_x = ttk.Scrollbar(
+                        tabela_frame,
+                        orient="horizontal",
+                        command=tree.xview
+                    )
 
-                tab_produto["VAL_TOT"].plot(kind="bar", ax=ax3)
+                    tree.configure(
+                        yscrollcommand=scroll_y.set,
+                        xscrollcommand=scroll_x.set
+                    )
 
-                ax3.set_title("Facturação por Produto", fontsize=9)
-                ax3.set_ylabel("Valor Total", fontsize=8)
-                ax3.tick_params(axis='x', rotation=45, labelsize=7)
+                    tree.grid(row=0, column=0, sticky="nsew")
+                    scroll_y.grid(row=0, column=1, sticky="ns")
+                    scroll_x.grid(row=1, column=0, sticky="ew")
 
-                fig3.tight_layout()
+                    tabela_frame.grid_rowconfigure(0, weight=1)
+                    tabela_frame.grid_columnconfigure(0, weight=1)
 
-                canvas3 = FigureCanvasTkAgg(fig3, master=chart_frame)
-                canvas3.draw()
+                    for campo in campos:
+                        tree.heading(campo, text=titulos.get(campo, campo))
 
-                canvas3.get_tk_widget().grid(row=1, column=0, padx=10, pady=10, sticky="n")
-                #canvas3.get_tk_widget().pack(side="left", fill="both", padx=5, pady=5)
+                        if campo == "VAL_TOT":
+                            tree.column(campo, width=150, anchor="e")
+                        elif campo == "QTDE":
+                            tree.column(campo, width=120, anchor="e")
+                        else:
+                            tree.column(campo, width=180, anchor="w")
 
+                    for _, row in dataframe.iterrows():
+                        linha_valores = []
+                        for campo in campos:
+                            valor = row[campo]
+
+                            if campo == "VAL_TOT":
+                                valor = formatar_valor_moeda(valor)
+                            elif campo == "QTDE":
+                                valor = formatar_quantidade(valor)
+
+                            linha_valores.append(valor)
+
+                        tree.insert("", "end", values=linha_valores)
+
+                # =========================
+                # GRÁFICOS
+                # =========================
+                def criar_grafico(frame_pai, coluna, titulo, dataframe, campo_categoria, quebra_texto=False):
+                    bloco = ctk.CTkFrame(frame_pai, corner_radius=8)
+                    bloco.grid(row=0, column=coluna, sticky="nsew", padx=8, pady=8)
+
+                    lbl = ctk.CTkLabel(
+                        bloco,
+                        text=titulo,
+                        font=("Arial", 15, "bold")
+                    )
+                    lbl.pack(pady=(8, 5))
+
+                    graf_df = dataframe.sort_values("VAL_TOT", ascending=False).head(10)
+
+                    if quebra_texto:
+                        labels = [
+                            "\n".join(textwrap.wrap(str(v), width=18))
+                            for v in graf_df[campo_categoria]
+                        ]
+                        rotacao = 50
+                    else:
+                        labels = graf_df[campo_categoria].astype(str)
+                        rotacao = 35
+
+                    fig = Figure(figsize=(4.2, 2.8), dpi=100)
+                    ax = fig.add_subplot(111)
+
+                    ax.bar(labels, graf_df["VAL_TOT"])
+                    ax.set_title(titulo, fontsize=10)
+                    ax.set_ylabel("Valor Total", fontsize=9)
+                    ax.tick_params(axis="x", rotation=rotacao, labelsize=8)
+                    ax.tick_params(axis="y", labelsize=8)
+
+                    fig.tight_layout()
+
+                    canvas = FigureCanvasTkAgg(fig, master=bloco)
+                    canvas.draw()
+                    canvas.get_tk_widget().pack(fill="both", expand=True, padx=8, pady=(0, 8))
+
+                # =========================
+                # CAMPOS E TÍTULOS
+                # =========================
+                campos_unidade = ["Unidade", "VAL_TOT", "QTDE"]
+                titulos_unidade = {
+                    "Unidade": "Unidade",
+                    "VAL_TOT": "Valor Total",
+                    "QTDE": "Quantidade"
+                }
+
+                campos_cliente = ["Tipo_Cliente", "VAL_TOT", "QTDE"]
+                titulos_cliente = {
+                    "Tipo_Cliente": "Tipo de Cliente",
+                    "VAL_TOT": "Valor Total",
+                    "QTDE": "Quantidade"
+                }
+
+                campos_produto = ["Produto", "VAL_TOT", "QTDE"]
+                titulos_produto = {
+                    "Produto": "Produto",
+                    "VAL_TOT": "Valor Total",
+                    "QTDE": "Quantidade"
+                }
+
+                # =========================
+                # TABELAS EM CIMA
+                # =========================
+                criar_treeview(
+                    area_superior, 0, 0,
+                    "Resumo por Unidade",
+                    tab_unidade,
+                    campos_unidade,
+                    titulos_unidade
+                )
+
+                criar_treeview(
+                    area_superior, 0, 1,
+                    "Resumo por Tipo de Cliente",
+                    tab_cliente,
+                    campos_cliente,
+                    titulos_cliente
+                )
+
+                criar_treeview(
+                    area_superior, 0, 2,
+                    "Resumo por Produto",
+                    tab_produto,
+                    campos_produto,
+                    titulos_produto
+                )
+
+                # =========================
+                # GRÁFICOS EM BAIXO
+                # =========================
+                criar_grafico(
+                    area_inferior, 0,
+                    "Facturação por Unidade",
+                    tab_unidade,
+                    "Unidade"
+                )
+
+                criar_grafico(
+                    area_inferior, 1,
+                    "Facturação por Tipo de Cliente",
+                    tab_cliente,
+                    "Tipo_Cliente",
+                    quebra_texto=True
+                )
+
+                criar_grafico(
+                    area_inferior, 2,
+                    "Facturação por Produto",
+                    tab_produto,
+                    "Produto"
+                )
+
+            # botão aplicar
             btn_aplicar = ctk.CTkButton(
                 filtro_frame,
                 text="Aplicar Filtros",
