@@ -8,6 +8,7 @@ from streamlit_option_menu import option_menu
 from sqlalchemy import text  # ✅ CORRETO
 from database.db import engine  # ✅ engine SQLAlchemy (MySQL)
 
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 def app():
