@@ -6,11 +6,16 @@ import streamlit as st
 import pandas as pd
 from streamlit_option_menu import option_menu
 from database.db import engine
+from database.db import Base, engine
+import database.models
+from sqlalchemy import text
+
+Base.metadata.create_all(bind=engine)
 
 # =========================================================
 # CONFIGURAÇÃO INICIAL (SEMPRE PRIMEIRO)
 # =========================================================
-st.set_page_config(page_title="Sistema", layout="wide")
+st.set_page_config(page_title="Sistema")
 
 # =========================================================
 # PATHS E IMPORTS
@@ -62,13 +67,26 @@ st.session_state.setdefault("nivel", None)
 # FUNÇÃO LOGIN (mantida como tens atualmente)
 # =========================================================
 def check_login(username, password):
-    query = f"""
-        SELECT nivel FROM usuarios
-        WHERE username = '{username}' AND password = '{password}'
-    """
-    df = pd.read_sql(query, engine)
-    if not df.empty:
-        return df.iloc[0]["nivel"]
+    query = text("""
+        SELECT nivel
+        FROM usuarios
+        WHERE username = :username
+          AND password = :password
+        LIMIT 1
+    """)
+
+    with engine.connect() as connection:
+        resultado = connection.execute(
+            query,
+            {
+                "username": username,
+                "password": password
+            }
+        ).fetchone()
+
+    if resultado:
+        return resultado._mapping["nivel"]
+
     return None
 
 # =========================================================

@@ -9,6 +9,12 @@ from database.db import engine  # Usar engine, não SessionLocal
 import re
 
 def app():
+
+    st.set_page_config(
+        page_title="Gestão de Contagens",
+        layout="wide"
+    )
+
         
     # --- Criação de tabelas adicionais para cruzamentos durante o programa ---
     #tabela Unidade
@@ -301,13 +307,15 @@ def app():
         "DT CONTRATO", "DT INICIO", "DT BAIXA", "OBS", "REF", ""
     ]
 
+    
+
     # --- Configuração da página ---
     st.set_page_config(page_title="Gestão de Contagens", layout="wide")
 
     # --- Menu lateral ---
     with st.sidebar:
         selected = option_menu(
-            menu_title="Menu Principal",
+            menu_title="Sub-Menu",
             options=["Importação", "Tratamento Itinerarios", "Analise Leituras"],
             menu_icon="cast",
             default_index=0
@@ -681,3 +689,6 @@ def app():
                 file_name='Analise_de_Leitura.csv',
                 mime='text/csv'
             )
+
+if __name__ == "__main__":
+    app()

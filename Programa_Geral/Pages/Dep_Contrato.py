@@ -2,19 +2,18 @@ import base64
 import sys
 import os
 import re
+
+# Caminho da pasta principal do projeto
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 import streamlit as st
 import pandas as pd
 from streamlit_option_menu import option_menu
-from sqlalchemy import text  # ✅ CORRETO
-from database.db import engine  # ✅ engine SQLAlchemy (MySQL)
-
-
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+from sqlalchemy import text
+from database.db import engine
 
 def app():
 
-    # Validação de e-mail
-    # -----------------------------
     def validar_email(label, key="Email"):
         email = st.text_input(label, key=key)
         padrao = r"^[\w\.-]+@[\w\.-]+\.\w{2,}$"
@@ -23,9 +22,6 @@ def app():
             return email, False
         return email, True
 
-    # -----------------------------
-    # Mostrar PDF (preview)
-    # -----------------------------
     def mostrar_pdf(pdf_bytes: bytes):
         b64 = base64.b64encode(pdf_bytes).decode("utf-8")
         pdf_html = f"""
@@ -33,361 +29,628 @@ def app():
                 src="data:application/pdf;base64,{b64}"
                 width="100%"
                 height="600"
-                style="border:none;"
-            ></iframe>
+                style="border:none;">
+            </iframe>
         """
         st.markdown(pdf_html, unsafe_allow_html=True)
 
-    # -----------------------------
-    # Limpar formulário
-    # -----------------------------
-    def limpar_formulario():
-        chaves = [
-            "nome", "Unidade", "Localidade", "Morada", "CNI", "Nif",
-            "Movel", "Telefone", "Email", "Data_Entrada", "Loja_Entrada",
-            "Serviço", "Potencia", "Tipo_Ligação", "Formato_Medidor",
-            "Estilo_contador", "Cliente",
-            "Localização", "Referência", "Latitude", "Longitude",
-            "pdf_file"
-        ]
-        for chave in chaves:
-            st.session_state.pop(chave, None)
-
-    # -----------------------------   
     def idx(lista, valor, default=0):
-        """Devolve o index do valor na lista; se não existir, devolve default."""
         try:
             return lista.index(valor)
         except Exception:
             return default
 
-    # =============================
-    # Listas para selectbox (as mesmas que usas no cadastro)
-    servicos = ["Pós-Pago", "Pré-Pago"]
-    potencias = ["1100 Kva", "2200 Kva", "3300 Kva", "6600 Kva", "9900 Kva", "13200 Kva", "16500 Kva", "19800 Kva"]
-    tipos = ["Monofásica", "Bifásica", "Trifásica"]
-    formatos = ["Normal", "Remota"]
-    estilos = ["Normal", "Bidirecional"]
-    clientes = ["Normal", "Micro Produtor"]
-    # -----------------------------
-    # Configuração da página
-    # -----------------------------
+    def guardar_processo(dados):
+        sql = text("""
+            INSERT INTO processos_clientes (
+                intencao, loja_entrada, unidade_comercial, nome_cliente,
+                localidade, identificador, cni, nif, telefone, movel,
+                movel2, email, nia, nivel_tarifario, cil, tipo_servico,
+                tipo_ligacao, tipo_cliente, entrada_processo, produto,
+                operador, tem_divida, latitude, longitude, uc_cliente,
+                marca_aparelho, numero_serie, data_instalacao, tipo_baixa,
+                motivo_baixa, servico_baixado, nome_pdf, ficheiro_pdf
+            )
+            VALUES (
+                :intencao, :loja_entrada, :unidade_comercial, :nome_cliente,
+                :localidade, :identificador, :cni, :nif, :telefone, :movel,
+                :movel2, :email, :nia, :nivel_tarifario, :cil, :tipo_servico,
+                :tipo_ligacao, :tipo_cliente, :entrada_processo, :produto,
+                :operador, :tem_divida, :latitude, :longitude, :uc_cliente,
+                :marca_aparelho, :numero_serie, :data_instalacao, :tipo_baixa,
+                :motivo_baixa, :servico_baixado, :nome_pdf, :ficheiro_pdf
+            )
+        """)
+
+        with engine.begin() as conn:
+            conn.execute(sql, dados)
+
+    def buscar_cils_mysql():
+        sql = text("""
+            SELECT cil
+            FROM processos_clientes
+            WHERE cil IS NOT NULL
+            ORDER BY cil
+        """)
+
+        try:
+            with engine.connect() as conn:
+                resultado = conn.execute(sql).fetchall()
+
+            return [linha._mapping["cil"] for linha in resultado]
+
+        except Exception as e:
+            st.error(f"Erro ao carregar CILs do MySQL: {e}")
+            return []
+
+
+    def buscar_cliente_mysql(cil):
+        sql = text("""
+            SELECT
+                cil,
+                tipo_cliente,
+                uc,
+                localidade,
+                produto,
+                marca_aparelho,
+                numero_serie,
+                data_instalacao
+            FROM clientes
+            WHERE cil = :cil
+            LIMIT 1
+        """)
+
+        try:
+            with engine.connect() as conn:
+                resultado = conn.execute(sql, {"cil": cil}).fetchone()
+
+            if resultado:
+                return dict(resultado._mapping)
+
+            return None
+
+        except Exception as e:
+            st.error(f"Erro ao buscar cliente no MySQL: {e}")
+            return None
+
+    # =========================
+    # LISTAS
+    # =========================
+    lojas = [
+        "Selecionar", "Loja Palmarejo", "Loja ASA", "Loja Plateau",
+        "Loja Fazenda", "Loja A. São Filipe", "Loja S. Domingos",
+        "Loja Assomada", "Loja Santa Cruz", "Loja Calheta",
+        "Loja Tarrafal", "Loja São Filipe (Fogo)", "Loja Mosteiro",
+        "Loja Brava", "Loja Maio", "BackOffice Área Contratação"
+    ]
+
+    ucs = [
+        "Selecionar", "Praia", "São Domingos", "Santa Catarina",
+        "Tarrafal", "Calheta", "Santa Cruz", "Mosteiros",
+        "São Filipe", "Maio", "Brava"
+    ]
+
+    niveis = ["Selecionar", "Nível 1", "Nível 2"]
+
+    tip_clien = [
+        "Selecionar", "Empresa Publica", "Colectivos", "Industriais",
+        "Construção", "Estado-Patrimonio", "Domésticos",
+        "Comércio, Industria, Agricul.", "Consumos Próprios",
+        "Autarquias", "Instituições", "Estado-Tesouro",
+        "Clientes Senhas de Água"
+    ]
+
+    servicos = ["Selecionar", "Pré Pago", "Pós Pago"]
+    entr_proc = ["Selecionar", "Processo", "Nota"]
+    produtos = ["Selecionar", "Água", "Baixa Tensão", "Baixa Tensão Especial", "Média Tensão"]
+    ligacoes = ["Selecionar", "Estaleiro", "Definitivo"]
+
+    tip_baixa = [
+        "Selecionar", "Baixa Voluntária", "Baixa Forçada",
+        "Baixa por Divida", "Baixa por Inspeção não Aprovada",
+        "Rescisão Voluntária"
+    ]
+
+   
     st.set_page_config(page_title="Contratação", layout="wide")
 
-    # -----------------------------
-    # Menu lateral
-    # -----------------------------
     with st.sidebar:
         selected = option_menu(
-            menu_title="Menu Principal",
+            menu_title="Sub-Menu",
             options=["Cadastro", "Consulta Processo"],
             menu_icon="cast",
             default_index=0
         )
 
-    # =============================
+    # =========================
     # CADASTRO
-    # =============================
+    # =========================
     if selected == "Cadastro":
-        st.header("Cadastro de Contratos")
 
-        with st.form("form_completo"):
+        st.header("Cadastro de Processos")
 
-            with st.expander("Parte 1 – Dados do Cliente", expanded=True):
-                nome = st.text_input("Nome", key="nome")
-                Unidade = st.text_input("Unidade", key="Unidade")
-                Localidade = st.text_input("Localidade", key="Localidade")
-                Morada = st.text_input("Morada", key="Morada")
-                CNI = st.text_input("CNI", key="CNI")
+        intencao = st.selectbox(
+            "Selecione a intenção",
+            ["Novas Ligações", "Mudança de Nome", "Baixa de Serviço"]
+        )
 
-                Nif = st.number_input("NIF", min_value=0, step=1, format="%d", key="Nif")
-                Movel = st.number_input("Móvel", min_value=0, step=1, format="%d", key="Movel")
-                Telefone = st.number_input("Telefone", min_value=0, step=1, format="%d", key="Telefone")
+        # =====================================================
+        # NOVAS LIGAÇÕES
+        # =====================================================
+        if intencao == "Novas Ligações":
 
-                Email, email_ok = validar_email("Email", key="Email")
+            with st.form("form_novas_ligacoes"):
 
-                Data_Entrada = st.date_input("Data de Entrada", key="Data_Entrada")
-                Loja_Entrada = st.text_input("Loja de Entrada", key="Loja_Entrada")
+                tab1, tab2 = st.tabs(["📋 Dados do Cliente", "📄 Informações Adicionais"])
 
-            with st.expander("Parte 2 – Tipo de Ligação", expanded=False):
-                Serviço = st.selectbox("Serviço", ["Pós-Pago", "Pré-Pago"], key="Serviço")
-                Potencia = st.selectbox(
-                    "Potência",
-                    ["1100 Kva", "2200 Kva", "3300 Kva", "6600 Kva", "9900 Kva", "13200 Kva", "16500 Kva", "19800 Kva"],
-                    key="Potencia"
-                )
-                Tipo_Ligação = st.selectbox("Tipo de Ligação", ["Monofásica", "Bifásica", "Trifásica"], key="Tipo_Ligação")
-                Formato_Medidor = st.selectbox("Formato do Contador", ["Normal", "Remota"], key="Formato_Medidor")
-                Estilo_contador = st.selectbox("Contador", ["Normal", "Bidirecional"], key="Estilo_contador")
-                Cliente = st.selectbox("Cliente", ["Normal", "Micro Produtor"], key="Cliente")
+                with tab1:
+                    loja_entrada = st.selectbox("Loja de entrada", lojas)
+                    uc = st.selectbox("Unidade Comercial", ucs)
+                    nome = st.text_input("Nome do cliente")
+                    localidade = st.text_input("Localidade")
+                    identificador = st.text_input("CNI ou Passaporte")
+                    nif = st.text_input("NIF")
+                    telefone = st.text_input("Telefone")
+                    movel = st.text_input("Movel")
+                    movel2 = st.text_input("Movel 2 (opcional)")
+                    email, email_ok = validar_email("Email", key="email_nova")
+                    nia = st.text_input("NIA (TARIFA SOCIAL)")
+                    nivel_tarifario = st.selectbox("Nível tarifário (TARIFA SOCIAL)", niveis)
 
-            with st.expander("Parte 3 – Indicação de Local", expanded=False):
-                Localização = st.text_input("Localização", key="Localização")
-                Referência = st.text_input("Referência", key="Referência")
+                with tab2:
+                    tipo_servico = st.selectbox("Tipo de serviço", servicos)
+                    tipo_ligacao = st.selectbox("Tipo de ligação", ligacoes)
+                    tip_cliente = st.selectbox("Tipo de cliente", tip_clien)
+                    entrada_processo = st.selectbox("Entrada do processo", entr_proc)
+                    produto = st.selectbox("Produto", produtos)
+                    operador = st.text_input("Operador responsável Entrada do Processo")
 
-                Latitude = st.number_input("Latitude", min_value=-90.0, max_value=90.0, format="%.6f", key="Latitude")
-                Longitude = st.number_input("Longitude", min_value=-180.0, max_value=180.0, format="%.6f", key="Longitude")
-
-                st.divider()
-
-                if Latitude != 0.0 or Longitude != 0.0:
-                    st.markdown("### 📍 Pré-visualização do ponto")
-                    df_map = pd.DataFrame({"lat": [Latitude], "lon": [Longitude]})
-                    st.map(df_map, zoom=14)
-
-            with st.expander("📄 Documento (PDF)", expanded=False):
-                pdf_file = st.file_uploader(
-                    "Carregar PDF",
-                    type=["pdf"],
-                    accept_multiple_files=False,
-                    key="pdf_file"
-                )
-
-                if pdf_file is not None:
-                    pdf_bytes_preview = pdf_file.getvalue()
-                    st.success(f"PDF carregado: {pdf_file.name} ({len(pdf_bytes_preview)/1024:.1f} KB)")
-
-                    st.download_button(
-                        "⬇️ Baixar este PDF",
-                        data=pdf_bytes_preview,
-                        file_name=pdf_file.name,
-                        mime="application/pdf"
+                    tem_divida = st.radio(
+                        "TEM DÍVIDA? *",
+                        ["Sim", "Não"],
+                        index=None,
+                        horizontal=True
                     )
 
-                    st.markdown("### 👀 Pré-visualização")
-                    mostrar_pdf(pdf_bytes_preview)
+                    st.markdown("### Coordenadas Geográficas")
 
-            col1, col2 = st.columns(2)
-            submit = col1.form_submit_button("💾 Gravar")
-            limpar = col2.form_submit_button("🧹 Limpar")
+                    col1, col2 = st.columns(2)
 
-        # -----------------------------
-        # Ações após submit/limpar
-        # -----------------------------
-        if submit:
-            if not email_ok:
-                st.error("Corrija os erros antes de gravar.")
-                st.stop()
+                    with col1:
+                        latitude = st.number_input(
+                            "Latitude (°)",
+                            min_value=-90.0,
+                            max_value=90.0,
+                            format="%.6f"
+                        )
 
-            # PDF (se existir)
-            pdf_nome = None
-            pdf_mime = None
-            pdf_bytes = None
+                    with col2:
+                        longitude = st.number_input(
+                            "Longitude (°)",
+                            min_value=-180.0,
+                            max_value=180.0,
+                            format="%.6f"
+                        )
 
-            if st.session_state.get("pdf_file") is not None:
-                pdf_obj = st.session_state["pdf_file"]
-                pdf_nome = pdf_obj.name
-                pdf_mime = getattr(pdf_obj, "type", None) or "application/pdf"
-                pdf_bytes = pdf_obj.getvalue()
+                    if latitude != 0.0 or longitude != 0.0:
+                        st.map(pd.DataFrame({"lat": [latitude], "lon": [longitude]}), zoom=14)
 
-            # Converter NIF/Móvel/Telefone para texto (evita perder zeros)
-            nif_str = str(Nif) if Nif is not None else None
-            movel_str = str(Movel) if Movel is not None else None
-            telefone_str = str(Telefone) if Telefone is not None else None
+                    uploaded_pdf = st.file_uploader(
+                        "Carregar Processo do Cliente (PDF)",
+                        type=["pdf"],
+                        key="pdf_nova"
+                    )
 
-            sql = text("""
-                INSERT INTO processos (
-                    nome, unidade, localidade, morada, cni,
-                    nif, movel, telefone, email, data_entrada, loja_entrada,
-                    servico, potencia, tipo_ligacao, formato_medidor, estilo_contador, cliente_tipo,
-                    localizacao, referencia, latitude, longitude,
-                    pdf_nome, pdf_mime, pdf_bytes
+                    if uploaded_pdf:
+                        pdf_preview = uploaded_pdf.getvalue()
+                        st.success(f"PDF carregado: {uploaded_pdf.name}")
+                        mostrar_pdf(pdf_preview)
+
+                guardar = st.form_submit_button("💾 Guardar Nova Ligação")
+
+                if guardar:
+                    if not email_ok:
+                        st.error("Corrija o email antes de gravar.")
+                        st.stop()
+
+                    pdf_nome = uploaded_pdf.name if uploaded_pdf else None
+                    pdf_bytes = uploaded_pdf.getvalue() if uploaded_pdf else None
+
+                    dados = {
+                        "intencao": "Novas Ligações",
+                        "loja_entrada": loja_entrada,
+                        "unidade_comercial": uc,
+                        "nome_cliente": nome,
+                        "localidade": localidade,
+                        "identificador": identificador,
+                        "cni": None,
+                        "nif": nif,
+                        "telefone": telefone,
+                        "movel": movel,
+                        "movel2": movel2,
+                        "email": email,
+                        "nia": nia,
+                        "nivel_tarifario": nivel_tarifario,
+                        "cil": None,
+                        "tipo_servico": tipo_servico,
+                        "tipo_ligacao": tipo_ligacao,
+                        "tipo_cliente": tip_cliente,
+                        "entrada_processo": entrada_processo,
+                        "produto": produto,
+                        "operador": operador,
+                        "tem_divida": tem_divida,
+                        "latitude": latitude,
+                        "longitude": longitude,
+                        "uc_cliente": None,
+                        "marca_aparelho": None,
+                        "numero_serie": None,
+                        "data_instalacao": None,
+                        "tipo_baixa": None,
+                        "motivo_baixa": None,
+                        "servico_baixado": None,
+                        "nome_pdf": pdf_nome,
+                        "ficheiro_pdf": pdf_bytes
+                    }
+
+                    try:
+                        guardar_processo(dados)
+                        st.success("✅ Nova ligação gravada com sucesso!")
+                    except Exception as e:
+                        st.error(f"❌ Erro ao gravar no MySQL: {e}")
+
+        # =====================================================
+        # MUDANÇA DE NOME
+        # =====================================================
+        elif intencao == "Mudança de Nome":
+
+            tab1, tab2 = st.tabs(["📋 Dados do Requisitante", "📄 Dados do Contrato"])
+
+            with tab1:
+                with st.form("form_requisitante_mudanca"):
+
+                    loja_entrada = st.selectbox("Loja de entrada", lojas)
+                    nome = st.text_input("Nome do cliente Requisitante")
+                    cni = st.text_input("CNI ou Passaporte do cliente Requisitante")
+                    nif = st.text_input("NIF do cliente Requisitante")
+                    movel = st.text_input("Movel do cliente Requisitante")
+                    movel2 = st.text_input("Movel 2 do cliente Requisitante (opcional)")
+                    telefone = st.text_input("Telefone do cliente Requisitante")
+                    email, email_ok = validar_email("Email do cliente Requisitante", key="email_mudanca")
+
+                    guardar_requisitante = st.form_submit_button("Guardar Dados do Requisitante")
+
+                    if guardar_requisitante:
+                        st.success("Dados do requisitante preenchidos.")
+
+            with tab2:
+
+                lista_cils = buscar_cils_mysql()
+
+                cil = st.selectbox(
+                    "🔍 Pesquisar ou selecionar CIL",
+                    options=lista_cils,
+                    index=None,
+                    placeholder="Digite para pesquisar...",
+                    key="cil_mudanca_nome"
                 )
-                VALUES (
-                    :nome, :unidade, :localidade, :morada, :cni,
-                    :nif, :movel, :telefone, :email, :data_entrada, :loja_entrada,
-                    :servico, :potencia, :tipo_ligacao, :formato_medidor, :estilo_contador, :cliente_tipo,
-                    :localizacao, :referencia, :latitude, :longitude,
-                    :pdf_nome, :pdf_mime, :pdf_bytes
+
+                if cil:
+                    cliente = buscar_cliente_mysql(cil)
+
+                    if not cliente:
+                        st.warning("Cliente não encontrado na base de dados.")
+                        st.stop()
+
+                    st.markdown("### Dados encontrados")
+
+                    with st.form("form_mudanca_nome"):
+
+                        st.text_input("Tipo de Cliente", value=cliente["tipo_cliente"], disabled=True)
+                        st.text_input("UC", value=cliente["uc"], disabled=True)
+                        st.text_input("Localidade", value=cliente["localidade"], disabled=True)
+                        st.text_input("Produto", value=cliente["produto"], disabled=True)
+                        st.text_input("Marca do Aparelho", value=cliente["marca_aparelho"], disabled=True)
+                        st.text_input("Número de Série", value=cliente["numero_serie"], disabled=True)
+                        st.text_input("Data de Instalação", value=cliente["data_instalacao"], disabled=True)
+
+                        uploaded_pdf = st.file_uploader(
+                            "Carregar Processo do Cliente (PDF)",
+                            type=["pdf"],
+                            key="pdf_mudanca"
+                        )
+
+                        if uploaded_pdf:
+                            pdf_preview = uploaded_pdf.getvalue()
+                            st.success(f"PDF carregado: {uploaded_pdf.name}")
+                            mostrar_pdf(pdf_preview)
+
+                        guardar_mudanca = st.form_submit_button("💾 Guardar Mudança de Nome")
+
+                        if guardar_mudanca:
+                            pdf_nome = uploaded_pdf.name if uploaded_pdf else None
+                            pdf_bytes = uploaded_pdf.getvalue() if uploaded_pdf else None
+
+                            dados = {
+                                "intencao": "Mudança de Nome",
+                                "loja_entrada": loja_entrada,
+                                "unidade_comercial": None,
+                                "nome_cliente": nome,
+                                "localidade": cliente["localidade"],
+                                "identificador": None,
+                                "cni": cni,
+                                "nif": nif,
+                                "telefone": telefone,
+                                "movel": movel,
+                                "movel2": movel2,
+                                "email": email,
+                                "nia": None,
+                                "nivel_tarifario": None,
+                                "cil": cil,
+                                "tipo_servico": None,
+                                "tipo_ligacao": None,
+                                "tipo_cliente": cliente["tipo_cliente"],
+                                "entrada_processo": None,
+                                "produto": cliente["produto"],
+                                "operador": None,
+                                "tem_divida": None,
+                                "latitude": None,
+                                "longitude": None,
+                                "uc_cliente": cliente["uc"],
+                                "marca_aparelho": cliente["marca_aparelho"],
+                                "numero_serie": cliente["numero_serie"],
+                                "data_instalacao": cliente["data_instalacao"],
+                                "tipo_baixa": None,
+                                "motivo_baixa": None,
+                                "servico_baixado": None,
+                                "nome_pdf": pdf_nome,
+                                "ficheiro_pdf": pdf_bytes
+                            }
+
+                            try:
+                                guardar_processo(dados)
+                                st.success("✅ Mudança de nome gravada com sucesso!")
+                            except Exception as e:
+                                st.error(f"❌ Erro ao gravar no MySQL: {e}")
+
+        # =====================================================
+        # BAIXA DE SERVIÇO
+        # =====================================================
+        elif intencao == "Baixa de Serviço":
+
+            st.subheader("Formulário: Baixa de Serviço")
+
+            loja_entrada = st.selectbox("Loja de entrada", lojas, key="loja_baixa")
+            nome = st.text_input("Nome do Requisitante", key="nome_baixa")
+            cni = st.text_input("CNI ou Passaporte do Requisitante", key="cni_baixa")
+            nif = st.text_input("NIF do Requisitante", key="nif_baixa")
+            movel = st.text_input("Movel do Requisitante", key="movel_baixa")
+            telefone = st.text_input("Telefone do Requisitante", key="telefone_baixa")
+            email, email_ok = validar_email("Email do Requisitante", key="email_baixa")
+
+            servico_baixa = st.selectbox("Serviço a ser baixado", servicos, key="servico_baixa")
+
+            lista_cils = buscar_cils_mysql()
+
+            cil = st.selectbox(
+                "🔍 Pesquisar ou selecionar CIL",
+                options=lista_cils,
+                index=None,
+                placeholder="Digite para pesquisar...",
+                key="cil_baixa_servico"
+            )
+
+            tipo_baixa = st.selectbox("Tipo de Baixa", tip_baixa, key="tipo_baixa")
+
+            with st.form("form_baixa_servico"):
+
+                motivo_baixa = st.text_area("Motivo da baixa do serviço")
+                operador = st.text_input("Operador responsável")
+
+                uploaded_pdf = st.file_uploader(
+                    "Carregar Documento de Baixa (PDF)",
+                    type=["pdf"],
+                    key="pdf_baixa"
                 )
-            """)
 
-            params = {
-                "nome": nome,
-                "unidade": Unidade,
-                "localidade": Localidade,
-                "morada": Morada,
-                "cni": CNI,
+                if uploaded_pdf:
+                    pdf_preview = uploaded_pdf.getvalue()
+                    st.success(f"PDF carregado: {uploaded_pdf.name}")
+                    mostrar_pdf(pdf_preview)
 
-                "nif": nif_str,
-                "movel": movel_str,
-                "telefone": telefone_str,
-                "email": Email,
-                "data_entrada": Data_Entrada,
-                "loja_entrada": Loja_Entrada,
+                guardar_baixa = st.form_submit_button("💾 Guardar Baixa de Serviço")
 
-                "servico": Serviço,
-                "potencia": Potencia,
-                "tipo_ligacao": Tipo_Ligação,
-                "formato_medidor": Formato_Medidor,
-                "estilo_contador": Estilo_contador,
-                "cliente_tipo": Cliente,
+                if guardar_baixa:
+                    if not email_ok:
+                        st.error("Corrija o email antes de gravar.")
+                        st.stop()
 
-                "localizacao": Localização,
-                "referencia": Referência,
-                "latitude": Latitude,
-                "longitude": Longitude,
+                    pdf_nome = uploaded_pdf.name if uploaded_pdf else None
+                    pdf_bytes = uploaded_pdf.getvalue() if uploaded_pdf else None
 
-                "pdf_nome": pdf_nome,
-                "pdf_mime": pdf_mime,
-                "pdf_bytes": pdf_bytes
-            }
+                    dados = {
+                        "intencao": "Baixa de Serviço",
+                        "loja_entrada": loja_entrada,
+                        "unidade_comercial": None,
+                        "nome_cliente": nome,
+                        "localidade": None,
+                        "identificador": None,
+                        "cni": cni,
+                        "nif": nif,
+                        "telefone": telefone,
+                        "movel": movel,
+                        "movel2": None,
+                        "email": email,
+                        "nia": None,
+                        "nivel_tarifario": None,
+                        "cil": cil,
+                        "tipo_servico": None,
+                        "tipo_ligacao": None,
+                        "tipo_cliente": None,
+                        "entrada_processo": None,
+                        "produto": None,
+                        "operador": operador,
+                        "tem_divida": None,
+                        "latitude": None,
+                        "longitude": None,
+                        "uc_cliente": None,
+                        "marca_aparelho": None,
+                        "numero_serie": None,
+                        "data_instalacao": None,
+                        "tipo_baixa": tipo_baixa,
+                        "motivo_baixa": motivo_baixa,
+                        "servico_baixado": servico_baixa,
+                        "nome_pdf": pdf_nome,
+                        "ficheiro_pdf": pdf_bytes
+                    }
 
-            try:
-                with engine.begin() as conn:
-                    conn.execute(sql, params)
+                    try:
+                        guardar_processo(dados)
+                        st.success("✅ Baixa de serviço gravada com sucesso!")
+                    except Exception as e:
+                        st.error(f"❌ Erro ao gravar no MySQL: {e}")
 
-                st.success("✅ Dados gravados com sucesso!")
-                limpar_formulario()
-                st.rerun()
-
-            except Exception as e:
-                st.error(f"❌ Erro ao gravar no MySQL: {e}")
-                st.stop()
-
-        if limpar:
-            limpar_formulario()
-            st.rerun()
-
-    # =============================
-    # CONSULTA
-    # =============================
+    # =========================
+    # CONSULTA PROCESSO
+    # =========================
     elif selected == "Consulta Processo":
+
         st.header("Consulta de Processos")
 
-        try:
-            df = pd.read_sql("SELECT * FROM processos ORDER BY id DESC", engine)
-
-            if df.empty:
-                st.warning("Não existem processos cadastrados.")
-                st.stop()
-
-            # --------- manter valores no session_state ---------
-            if "pesquisa_proc" not in st.session_state:
-                st.session_state["pesquisa_proc"] = ""
-            if "id_sel_proc" not in st.session_state:
-                st.session_state["id_sel_proc"] = None
-
-            # ✅ campo fica sempre e mantém o que foi digitado
-            pesquisa = st.text_input(
-                "Pesquisar por ID, CNI ou Nome",
-                placeholder="Digite o ID, CNI ou Nome do cliente",
-                key="pesquisa_proc"
+        with st.form("form_pesquisa_processos"):
+            pesquisa_global = st.text_input(
+                "🔎 Pesquisa Geral",
+                placeholder="Digite ID, CNI, Nome ou CIL"
             )
 
-            # --------- FILTRO DINÂMICO ---------
-            if pesquisa:
-                seleid = df[
-                    df["id"].astype(str).str.contains(pesquisa, case=False, na=False)
-                    | df["cni"].astype(str).str.contains(pesquisa, case=False, na=False)
-                    | df["nome"].astype(str).str.contains(pesquisa, case=False, na=False)
-                ].copy()
-            else:
-                seleid = df.copy()
+            col1, col2 = st.columns(2)
 
-            if seleid.empty:
-                st.warning("Nenhum processo encontrado.")
-                st.stop()
+            with col1:
+                pesquisa_id = st.text_input("ID")
+                pesquisa_cni = st.text_input("CNI")
 
-            # --------- label do selectbox ---------
-            seleid["label"] = (
-                "ID: " + seleid["id"].astype(str)
-                + " | " + seleid["nome"].fillna("").astype(str)
-                + " | CNI: " + seleid["cni"].fillna("").astype(str)
-            )
+            with col2:
+                pesquisa_nome = st.text_input("Nome do Cliente")
+                pesquisa_cil = st.text_input("CIL")
 
-            labels = seleid["label"].tolist()
+            pesquisar = st.form_submit_button("🔍 Pesquisar")
 
-            # ✅ manter a seleção anterior se ainda existir no filtro
-            if st.session_state["id_sel_proc"] is not None:
-                mask = seleid["id"] == st.session_state["id_sel_proc"]
-                if mask.any():
-                    id_atual = int(st.session_state["id_sel_proc"])
-                    label_atual = seleid.loc[seleid["id"] == id_atual, "label"].iloc[0]
-                    index_atual = labels.index(label_atual)
-                else:
-                    index_atual = 0
-            else:
-                index_atual = 0
+        if pesquisar:
+            try:
+                query = """
+                    SELECT *
+                    FROM processos_clientes
+                    WHERE 1=1
+                """
 
-            escolha = st.selectbox(
-                "Escolha o processo",
-                labels,
-                index=index_atual
-            )
+                params = {}
 
-            # guardar id selecionado
-            id_sel = int(escolha.split("|")[0].replace("ID:", "").strip())
-            st.session_state["id_sel_proc"] = id_sel
+                if pesquisa_global.strip():
+                    query += """
+                        AND (
+                            CAST(id AS CHAR) LIKE %(global)s
+                            OR cni LIKE %(global)s
+                            OR nome_cliente LIKE %(global)s
+                            OR cil LIKE %(global)s
+                        )
+                    """
+                    params["global"] = f"%{pesquisa_global.strip()}%"
 
-            # pegar a linha selecionada
-            row = seleid.loc[seleid["id"] == id_sel].iloc[0]
+                if pesquisa_id.strip():
+                    query += " AND id = %(id)s"
+                    params["id"] = pesquisa_id.strip()
 
-            def idx(lista, valor, default=0):
-                try:
-                    return lista.index(valor)
-                except Exception:
-                    return default
+                if pesquisa_cni.strip():
+                    query += " AND cni LIKE %(cni)s"
+                    params["cni"] = f"%{pesquisa_cni.strip()}%"
 
-            # --------- FORM (consulta) ---------
-            with st.form("form_completo_consulta"):
+                if pesquisa_nome.strip():
+                    query += " AND nome_cliente LIKE %(nome)s"
+                    params["nome"] = f"%{pesquisa_nome.strip()}%"
 
-                with st.expander("Parte 1 – Dados do Cliente", expanded=True):
-                    st.text_input("Nome", value=str(row.get("nome", "") or ""), disabled=True)
-                    st.text_input("Unidade", value=str(row.get("unidade", "") or ""), disabled=True)
-                    st.text_input("Localidade", value=str(row.get("localidade", "") or ""), disabled=True)
-                    st.text_input("Morada", value=str(row.get("morada", "") or ""), disabled=True)
-                    st.text_input("CNI", value=str(row.get("cni", "") or ""), disabled=True)
+                if pesquisa_cil.strip():
+                    query += " AND cil LIKE %(cil)s"
+                    params["cil"] = f"%{pesquisa_cil.strip()}%"
 
-                    st.number_input("NIF", value=int(row.get("nif", 0) or 0), min_value=0, step=1, format="%d", disabled=True)
-                    st.number_input("Móvel", value=int(row.get("movel", 0) or 0), min_value=0, step=1, format="%d", disabled=True)
-                    st.number_input("Telefone", value=int(row.get("telefone", 0) or 0), min_value=0, step=1, format="%d", disabled=True)
+                query += " ORDER BY id DESC"
 
-                    st.text_input("Email", value=str(row.get("email", "") or ""), disabled=True)
-                    st.date_input("Data de Entrada", value=row.get("data_entrada"), disabled=True)
+                if not params:
+                    st.warning("Informe pelo menos um critério de pesquisa.")
+                    st.stop()
+
+                seleid = pd.read_sql(query, engine, params=params)
+
+                if seleid.empty:
+                    st.warning("Nenhum processo encontrado.")
+                    st.stop()
+
+                st.success(f"{len(seleid)} processo(s) encontrado(s).")
+
+                seleid["label"] = (
+                    "ID: " + seleid["id"].astype(str)
+                    + " | " + seleid["intencao"].fillna("").astype(str)
+                    + " | " + seleid["nome_cliente"].fillna("").astype(str)
+                    + " | CIL: " + seleid["cil"].fillna("").astype(str)
+                )
+
+                escolha = st.selectbox(
+                    "Escolha o processo",
+                    seleid["label"].tolist()
+                )
+
+                id_sel = int(escolha.split("|")[0].replace("ID:", "").strip())
+                row = seleid.loc[seleid["id"] == id_sel].iloc[0]
+
+                with st.expander("📋 Dados do Processo", expanded=True):
+                    st.text_input("Intenção", value=str(row.get("intencao", "") or ""), disabled=True)
                     st.text_input("Loja de Entrada", value=str(row.get("loja_entrada", "") or ""), disabled=True)
+                    st.text_input("Nome Cliente/Requisitante", value=str(row.get("nome_cliente", "") or ""), disabled=True)
+                    st.text_input("CNI", value=str(row.get("cni", "") or ""), disabled=True)
+                    st.text_input("NIF", value=str(row.get("nif", "") or ""), disabled=True)
+                    st.text_input("Telefone", value=str(row.get("telefone", "") or ""), disabled=True)
+                    st.text_input("Móvel", value=str(row.get("movel", "") or ""), disabled=True)
+                    st.text_input("Email", value=str(row.get("email", "") or ""), disabled=True)
+                    st.text_input("CIL", value=str(row.get("cil", "") or ""), disabled=True)
 
-                with st.expander("Parte 2 – Tipo de Ligação", expanded=False):
-                    st.selectbox("Serviço", servicos, index=idx(servicos, row.get("servico")), disabled=True)
-                    st.selectbox("Potência", potencias, index=idx(potencias, row.get("potencia")), disabled=True)
-                    st.selectbox("Tipo de Ligação", tipos, index=idx(tipos, row.get("tipo_ligacao")), disabled=True)
-                    st.selectbox("Formato do Contador", formatos, index=idx(formatos, row.get("formato_medidor")), disabled=True)
-                    st.selectbox("Contador", estilos, index=idx(estilos, row.get("estilo_contador")), disabled=True)
-                    st.selectbox("Cliente", clientes, index=idx(clientes, row.get("cliente_tipo")), disabled=True)
+                with st.expander("📄 Dados Técnicos", expanded=False):
+                    st.text_input("Unidade Comercial", value=str(row.get("unidade_comercial", "") or ""), disabled=True)
+                    st.text_input("UC Cliente", value=str(row.get("uc_cliente", "") or ""), disabled=True)
+                    st.text_input("Localidade", value=str(row.get("localidade", "") or ""), disabled=True)
+                    st.text_input("Tipo Cliente", value=str(row.get("tipo_cliente", "") or ""), disabled=True)
+                    st.text_input("Produto", value=str(row.get("produto", "") or ""), disabled=True)
+                    st.text_input("Tipo Serviço", value=str(row.get("tipo_servico", "") or ""), disabled=True)
+                    st.text_input("Tipo Ligação", value=str(row.get("tipo_ligacao", "") or ""), disabled=True)
+                    st.text_input("Entrada Processo", value=str(row.get("entrada_processo", "") or ""), disabled=True)
+                    st.text_input("Operador", value=str(row.get("operador", "") or ""), disabled=True)
 
-                with st.expander("Parte 3 – Indicação de Local", expanded=False):
-                    st.text_input("Localização", value=str(row.get("localizacao", "") or ""), disabled=True)
-                    st.text_input("Referência", value=str(row.get("referencia", "") or ""), disabled=True)
-
+                with st.expander("📍 Coordenadas", expanded=False):
                     lat = float(row.get("latitude", 0.0) or 0.0)
                     lon = float(row.get("longitude", 0.0) or 0.0)
 
                     st.number_input("Latitude", value=lat, min_value=-90.0, max_value=90.0, format="%.6f", disabled=True)
                     st.number_input("Longitude", value=lon, min_value=-180.0, max_value=180.0, format="%.6f", disabled=True)
 
-                    st.divider()
                     if lat != 0.0 or lon != 0.0:
                         st.map(pd.DataFrame({"lat": [lat], "lon": [lon]}), zoom=14)
 
-                with st.expander("📄 Documento (PDF)", expanded=False):
-                    pdf_bytes = row.get("pdf_bytes")
-                    pdf_nome = row.get("pdf_nome", "documento.pdf")
-                    pdf_mime = row.get("pdf_mime", "application/pdf")
+                with st.expander("📄 Documento PDF", expanded=False):
+                    pdf_bytes = row.get("ficheiro_pdf")
+                    pdf_nome = row.get("nome_pdf") or "documento.pdf"
 
                     if pdf_bytes:
-                        st.download_button("⬇️ Baixar PDF", data=pdf_bytes, file_name=pdf_nome, mime=pdf_mime)
+                        st.download_button(
+                            "⬇️ Baixar PDF",
+                            data=pdf_bytes,
+                            file_name=pdf_nome,
+                            mime="application/pdf"
+                        )
                         mostrar_pdf(pdf_bytes)
                     else:
                         st.info("Este processo não possui PDF.")
 
-                c1, c2 = st.columns(2)
-                fechar = c1.form_submit_button("✅ Fechar")
-                editar = c2.form_submit_button("✏️ Editar")
+            except Exception as e:
+                st.error(f"Erro ao consultar processos: {e}")
 
-            if fechar:
-                st.info("Fechado.")
-            if editar:
-                st.info("Modo edição.")
 
-        except Exception as e:
-            st.error(f"Erro ao consultar processos: {e}")
+if __name__ == "__main__":
+    app()
+
